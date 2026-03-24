@@ -1,17 +1,39 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
 import { useRouter, Link } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { LoginForm } from '@/features/auth/components/LoginForm';
 import { SocialLoginButton } from '@/features/auth/components/SocialLoginButton';
 
+import { loginUser } from '@/features/auth/services/auth.service';
+import { useAuth } from '@/features/auth/store/AuthContext';
+
 export default function LoginScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { login } = useAuth();
+  const [isLoading, setIsLoading] = React.useState(false);
 
-  const handleLogin = (email: string, pass: string) => {
-    router.replace('/(tabs)');
+  const handleLogin = async (email: string, pass: string) => {
+    if (!email || !pass) {
+      Alert.alert('Erro', 'Preencha o e-mail e a senha.');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      // Chama a API que o usuário construiu em auth.service.ts
+      const response = await loginUser({ email, password: pass, name: '' });
+      
+      // Armazenamos o token no contexto (e ele cuida de redirecionar para tabs pelo _layout.tsx)
+      login(response.token || 'fake-token'); 
+    } catch (error: any) {
+      console.error('Error logging in:', error);
+      Alert.alert('Erro no Login', error?.response?.data?.message || 'E-mail ou senha inválidos.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -35,7 +57,7 @@ export default function LoginScreen() {
           <Text style={styles.title}>Acesse sua conta</Text>
           <Text style={styles.subtitle}>Continue de onde parou. Suas finanças estão aqui.</Text>
 
-          <LoginForm onSubmit={handleLogin} />
+          <LoginForm onSubmit={handleLogin} isLoading={isLoading} submitLabel="Entrar" />
 
           <View style={styles.dividerContainer}>
             <View style={styles.dividerLine} />

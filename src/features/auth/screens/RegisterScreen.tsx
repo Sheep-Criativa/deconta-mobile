@@ -1,19 +1,41 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
 import { useRouter, Link } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { LoginForm } from '@/features/auth/components/LoginForm';
 import { SocialLoginButton } from '@/features/auth/components/SocialLoginButton';
 
+import { registerUser } from '@/features/auth/services/auth.service';
+
 export default function RegisterScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleRegister = (email: string, pass: string, name?: string) => {
-    // Navigate to login after registration
-    router.replace('/(auth)/login');
-  };
+  async function handleRegister(email: string, password: string, name?: string) {
+    if (!name || !email || !password) {
+      Alert.alert('Erro', 'Por favor, preencha todos os campos corretamente.');
+      return;
+    }
+    
+    try {
+      setIsLoading(true);
+      const data = { name, email, password };
+      await registerUser(data);
+      Alert.alert('Sucesso', 'Conta criada com sucesso!', [
+        { text: 'OK', onPress: () => router.replace('/(auth)/login') }
+      ]);
+    } catch (error: any) {
+      console.error('Error registering user:', error);
+      Alert.alert(
+        'Erro ao criar conta', 
+        error?.response?.data?.message || 'Verifique seus dados e tente novamente.'
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }
 
   return (
     <KeyboardAvoidingView 
@@ -36,7 +58,11 @@ export default function RegisterScreen() {
           <Text style={styles.title}>Criar conta</Text>
           <Text style={styles.subtitle}>Acesse suas finanças a qualquer momento e mantenha tudo organizado em um só lugar.</Text>
 
-          <LoginForm onSubmit={handleRegister} showNameField={true} />
+          <LoginForm 
+            onSubmit={handleRegister} 
+            showNameField={true} 
+            isLoading={isLoading} 
+          />
 
           <View style={styles.dividerContainer}>
             <View style={styles.dividerLine} />

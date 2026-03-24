@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 
 interface LoginFormProps {
   onSubmit: (email: string, pass: string, name?: string) => void;
   submitLabel?: string;
   showNameField?: boolean;
+  isLoading?: boolean;
 }
 
-export function LoginForm({ onSubmit, submitLabel = "Comece Agora", showNameField = false }: LoginFormProps) {
+export function LoginForm({ onSubmit, submitLabel = "Comece Agora", showNameField = false, isLoading = false }: LoginFormProps) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -53,11 +54,16 @@ export function LoginForm({ onSubmit, submitLabel = "Comece Agora", showNameFiel
       </View>
 
       <TouchableOpacity 
-        style={styles.primaryButton} 
+        style={[styles.primaryButton, isLoading && styles.primaryButtonDisabled]} 
         activeOpacity={0.8} 
         onPress={() => onSubmit(email, password, showNameField ? name : undefined)}
+        disabled={isLoading}
       >
-        <Text style={styles.primaryButtonText}>{submitLabel}</Text>
+        {isLoading ? (
+          <ActivityIndicator color="#ffffff" />
+        ) : (
+          <Text style={styles.primaryButtonText}>{submitLabel}</Text>
+        )}
       </TouchableOpacity>
     </View>
   );
@@ -95,6 +101,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 4,
+  },
+  primaryButtonDisabled: {
+    opacity: 0.7,
   },
   primaryButtonText: {
     color: '#ffffff',
