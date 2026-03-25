@@ -1,161 +1,209 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
-import { useRouter, Link } from 'expo-router';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  Alert,
+  Image,
+  ImageBackground,
+  StatusBar,
+} from 'react-native';
+import { Link } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { LoginForm } from '@/features/auth/components/LoginForm';
+import { LoginForm, FormValues } from '@/features/auth/components/LoginForm';
 import { SocialLoginButton } from '@/features/auth/components/SocialLoginButton';
-
 import { loginUser } from '@/features/auth/services/auth.service';
 import { useAuth } from '@/features/auth/store/AuthContext';
 
 export default function LoginScreen() {
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { login } = useAuth();
   const [isLoading, setIsLoading] = React.useState(false);
 
-  const handleLogin = async (email: string, pass: string) => {
-    if (!email || !pass) {
-      Alert.alert('Erro', 'Preencha o e-mail e a senha.');
-      return;
-    }
-
+  const handleLogin = async (values: FormValues) => {
     try {
       setIsLoading(true);
-      // Chama a API que o usuário construiu em auth.service.ts
-      const response = await loginUser({ email, password: pass, name: '' });
-      
-      // Armazenamos o token no contexto (e ele cuida de redirecionar para tabs pelo _layout.tsx)
-      login(response.token || 'fake-token'); 
+      const response = await loginUser({ email: values.email, password: values.password, name: '' });
+      login(response.token || 'session-token');
     } catch (error: any) {
-      console.error('Error logging in:', error);
-      Alert.alert('Erro no Login', error?.response?.data?.message || 'E-mail ou senha inválidos.');
+      const msg =
+        error?.response?.status === 401
+          ? 'E-mail ou senha incorretos. Verifique seus dados.'
+          : error?.response?.data?.message || 'Não foi possível conectar. Tente novamente.';
+      Alert.alert('Erro ao entrar', msg);
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container} 
+    <KeyboardAvoidingView
+      style={styles.root}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView 
-        contentContainerStyle={[
-          styles.scrollContainer, 
-          { paddingTop: insets.top + 40, paddingBottom: insets.bottom + 40 }
-        ]}
+      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+
+      <ImageBackground
+        source={require('../../../../assets/img-deconta/ceu1.png')}
+        style={styles.background}
+        resizeMode="cover"
       >
-        <View style={styles.formContainer}>
-          
-          <View style={styles.logoBox}>
-            <View style={styles.logoInnerDot} />
-            <Text style={styles.logoText}>i</Text>
+        {/* Overlay escuro sobre o fundo */}
+        <View style={[styles.overlay, { paddingTop: insets.top }]}>
+
+          {/* ── Hero: logo + tagline (altura fixa) ── */}
+          <View style={styles.hero}>
+            <Image
+              source={require('../../../../assets/img-deconta/logoverticalbranco.png')}
+              style={styles.heroLogo}
+              resizeMode="contain"
+            />
+            <Text style={styles.heroTagline}>Controle financeiro na ponta dos dedos</Text>
           </View>
 
-          <Text style={styles.title}>Acesse sua conta</Text>
-          <Text style={styles.subtitle}>Continue de onde parou. Suas finanças estão aqui.</Text>
+          {/*
+            ── Card branco ──
+            Estrutura correta para preencher o restante da tela sem gap:
+            - View (cardContainer) com flex: 1 e as bordas arredondadas no topo
+            - ScrollView DENTRO do View, não envolvendo ele
+          */}
+          <View style={styles.cardContainer}>
+            <ScrollView
+              contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 32 }]}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              <Text style={styles.cardTitle}>Acesse sua conta</Text>
+              <Text style={styles.cardSubtitle}>
+                Continue de onde parou e mantenha o controle das suas finanças.
+              </Text>
 
-          <LoginForm onSubmit={handleLogin} isLoading={isLoading} submitLabel="Entrar" />
+              <LoginForm
+                onSubmit={handleLogin}
+                isLoading={isLoading}
+                submitLabel="Entrar"
+              />
 
-          <View style={styles.dividerContainer}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>Ou continue com:</Text>
-            <View style={styles.dividerLine} />
-          </View>
+              <View style={styles.dividerRow}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerLabel}>ou continue com</Text>
+                <View style={styles.dividerLine} />
+              </View>
 
-          <SocialLoginButton 
-            title="Fazer Login com o Google"
-            iconName="globe"
-            iconColor="#ea4335"
-          />
+              <SocialLoginButton
+                title="Entrar com Google"
+                iconName="globe"
+                iconColor="#10b981"
+              />
 
-          <View style={styles.footerContainer}>
-            <Text style={styles.footerText}>Ainda não tem uma conta? </Text>
-            <Link href="/(auth)/register" asChild>
-              <TouchableOpacity>
-                <Text style={styles.footerLink}>Criar conta</Text>
-              </TouchableOpacity>
-            </Link>
+              <View style={styles.footer}>
+                <Text style={styles.footerText}>Ainda não tem uma conta? </Text>
+                <Link href="/(auth)/register" asChild>
+                  <TouchableOpacity hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}>
+                    <Text style={styles.footerLink}>Criar conta</Text>
+                  </TouchableOpacity>
+                </Link>
+              </View>
+            </ScrollView>
           </View>
 
         </View>
-      </ScrollView>
+      </ImageBackground>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
+    flex: 1,
+  },
+  background: {
+    flex: 1,
+  },
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.22)',
+  },
+
+  /* Hero com altura fixa — NÃO usa flex */
+  hero: {
+    height: 220,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+  },
+  heroLogo: {
+    width: 160,
+    height: 110,
+    marginBottom: 10,
+  },
+  heroTagline: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.75)',
+    textAlign: 'center',
+    letterSpacing: 0.3,
+  },
+
+  /*
+   * cardContainer: ocupa todo o espaço restante (flex: 1)
+   * Define o fundo branco e borda arredondada — sem depender de ScrollView
+   */
+  cardContainer: {
     flex: 1,
     backgroundColor: '#ffffff',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 12,
   },
-  scrollContainer: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
+  /* ScrollView interno — só rola o conteúdo, não define o fundo */
+  scrollContent: {
+    paddingHorizontal: 28,
+    paddingTop: 32,
   },
-  formContainer: {
-    width: '100%',
-    maxWidth: 400,
-    alignSelf: 'center',
+
+  cardTitle: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: '#18181b',
+    marginBottom: 6,
   },
-  logoBox: {
-    width: 32,
-    height: 32,
-    backgroundColor: '#f59e0b',
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 24,
-    position: 'relative'
-  },
-  logoInnerDot: {
-    position: 'absolute',
-    top: 4,
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#ffffff'
-  },
-  logoText: {
-    color: '#ffffff',
-    fontWeight: '900',
-    fontSize: 16,
-    marginTop: 4
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    color: '#18181b', // zinc-900
-    marginBottom: 8,
-  },
-  subtitle: {
+  cardSubtitle: {
     fontSize: 14,
-    color: '#71717a', // zinc-500
-    marginBottom: 32,
-    lineHeight: 20,
+    color: '#71717a',
+    lineHeight: 21,
+    marginBottom: 28,
   },
-  dividerContainer: {
+
+  dividerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 24,
+    marginVertical: 20,
   },
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#f4f4f5', // zinc-100
+    backgroundColor: '#f4f4f5',
   },
-  dividerText: {
+  dividerLabel: {
     marginHorizontal: 12,
     fontSize: 12,
-    color: '#a1a1aa', // zinc-400
+    color: '#a1a1aa',
   },
-  footerContainer: {
+
+  footer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 32,
+    marginTop: 24,
   },
   footerText: {
     fontSize: 13,
@@ -163,7 +211,7 @@ const styles = StyleSheet.create({
   },
   footerLink: {
     fontSize: 13,
-    fontWeight: 'bold',
+    fontWeight: '600',
     color: '#10b981',
   },
 });

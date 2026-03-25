@@ -1,166 +1,214 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
+import React from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  Alert,
+  Image,
+  ImageBackground,
+  StatusBar,
+} from 'react-native';
 import { useRouter, Link } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { LoginForm } from '@/features/auth/components/LoginForm';
+import { LoginForm, FormValues } from '@/features/auth/components/LoginForm';
 import { SocialLoginButton } from '@/features/auth/components/SocialLoginButton';
-
 import { registerUser } from '@/features/auth/services/auth.service';
 
 export default function RegisterScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = React.useState(false);
 
-  async function handleRegister(email: string, password: string, name?: string) {
-    if (!name || !email || !password) {
-      Alert.alert('Erro', 'Por favor, preencha todos os campos corretamente.');
-      return;
-    }
-    
+  const handleRegister = async (values: FormValues) => {
     try {
       setIsLoading(true);
-      const data = { name, email, password };
-      await registerUser(data);
-      Alert.alert('Sucesso', 'Conta criada com sucesso!', [
-        { text: 'OK', onPress: () => router.replace('/(auth)/login') }
-      ]);
-    } catch (error: any) {
-      console.error('Error registering user:', error);
+      await registerUser({ name: values.name!, email: values.email, password: values.password });
       Alert.alert(
-        'Erro ao criar conta', 
-        error?.response?.data?.message || 'Verifique seus dados e tente novamente.'
+        '✅ Conta criada!',
+        'Sua conta foi criada com sucesso. Agora é só entrar!',
+        [{ text: 'Entrar agora', onPress: () => router.replace('/(auth)/login') }]
       );
+    } catch (error: any) {
+      const msg =
+        error?.response?.status === 409
+          ? 'Este e-mail já está em uso. Tente outro ou faça login.'
+          : error?.response?.data?.message || 'Não foi possível criar a conta. Tente novamente.';
+      Alert.alert('Erro ao criar conta', msg);
     } finally {
       setIsLoading(false);
     }
-  }
+  };
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container} 
+    <KeyboardAvoidingView
+      style={styles.root}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView 
-        contentContainerStyle={[
-          styles.scrollContainer, 
-          { paddingTop: insets.top + 40, paddingBottom: insets.bottom + 40 }
-        ]}
+      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+
+      <ImageBackground
+        source={require('../../../../assets/img-deconta/ceu1.png')}
+        style={styles.background}
+        resizeMode="cover"
       >
-        <View style={styles.formContainer}>
-          
-          <View style={styles.logoBox}>
-            <View style={styles.logoInnerDot} />
-            <Text style={styles.logoText}>i</Text>
+        <View style={[styles.overlay, { paddingTop: insets.top }]}>
+
+          {/* ── Hero: logo + badge (altura fixa) ── */}
+          <View style={styles.hero}>
+            <Image
+              source={require('../../../../assets/img-deconta/logoverticalbranco.png')}
+              style={styles.heroLogo}
+              resizeMode="contain"
+            />
+            <View style={styles.heroBadge}>
+              <Text style={styles.heroBadgeText}>Crie sua conta grátis</Text>
+            </View>
           </View>
 
-          <Text style={styles.title}>Criar conta</Text>
-          <Text style={styles.subtitle}>Acesse suas finanças a qualquer momento e mantenha tudo organizado em um só lugar.</Text>
+          {/*
+            ── Card branco ──
+            View com flex: 1 define o fundo e as bordas — ScrollView fica DENTRO
+          */}
+          <View style={styles.cardContainer}>
+            <ScrollView
+              contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 32 }]}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              <Text style={styles.cardTitle}>Vamos começar!</Text>
+              <Text style={styles.cardSubtitle}>
+                Crie sua conta e tenha o controle total das suas finanças em um só lugar.
+              </Text>
 
-          <LoginForm 
-            onSubmit={handleRegister} 
-            showNameField={true} 
-            isLoading={isLoading} 
-          />
+              <LoginForm
+                onSubmit={handleRegister}
+                showNameField={true}
+                isLoading={isLoading}
+                submitLabel="Criar conta"
+              />
 
-          <View style={styles.dividerContainer}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>Ou continue com:</Text>
-            <View style={styles.dividerLine} />
-          </View>
+              <View style={styles.dividerRow}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerLabel}>ou registre-se com</Text>
+                <View style={styles.dividerLine} />
+              </View>
 
-          <SocialLoginButton 
-            title="Criar conta com Google"
-            iconName="globe"
-            iconColor="#ea4335"
-          />
+              <SocialLoginButton
+                title="Criar conta com Google"
+                iconName="globe"
+                iconColor="#10b981"
+              />
 
-          <View style={styles.footerContainer}>
-            <Text style={styles.footerText}>Já possui uma conta? </Text>
-            <Link href="/(auth)/login" asChild>
-              <TouchableOpacity>
-                <Text style={styles.footerLink}>Entrar</Text>
-              </TouchableOpacity>
-            </Link>
+              <View style={styles.footer}>
+                <Text style={styles.footerText}>Já tem uma conta? </Text>
+                <Link href="/(auth)/login" asChild>
+                  <TouchableOpacity hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}>
+                    <Text style={styles.footerLink}>Entrar</Text>
+                  </TouchableOpacity>
+                </Link>
+              </View>
+            </ScrollView>
           </View>
 
         </View>
-      </ScrollView>
+      </ImageBackground>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
+    flex: 1,
+  },
+  background: {
+    flex: 1,
+  },
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.22)',
+  },
+
+  /* Hero com altura fixa */
+  hero: {
+    height: 200,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+    gap: 14,
+  },
+  heroLogo: {
+    width: 150,
+    height: 100,
+  },
+  heroBadge: {
+    backgroundColor: '#10b981',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 9999,
+  },
+  heroBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#ffffff',
+    letterSpacing: 0.3,
+  },
+
+  /* Card: flex:1 garante preenchimento até o final da tela */
+  cardContainer: {
     flex: 1,
     backgroundColor: '#ffffff',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 12,
   },
-  scrollContainer: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
+  scrollContent: {
+    paddingHorizontal: 28,
+    paddingTop: 32,
   },
-  formContainer: {
-    width: '100%',
-    maxWidth: 400,
-    alignSelf: 'center',
+
+  cardTitle: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: '#18181b',
+    marginBottom: 6,
   },
-  logoBox: {
-    width: 32,
-    height: 32,
-    backgroundColor: '#f59e0b',
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 24,
-    position: 'relative'
-  },
-  logoInnerDot: {
-    position: 'absolute',
-    top: 4,
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#ffffff'
-  },
-  logoText: {
-    color: '#ffffff',
-    fontWeight: '900',
-    fontSize: 16,
-    marginTop: 4
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    color: '#18181b', // zinc-900
-    marginBottom: 8,
-  },
-  subtitle: {
+  cardSubtitle: {
     fontSize: 14,
-    color: '#71717a', // zinc-500
-    marginBottom: 32,
-    lineHeight: 20,
+    color: '#71717a',
+    lineHeight: 21,
+    marginBottom: 28,
   },
-  dividerContainer: {
+
+  dividerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 24,
+    marginVertical: 20,
   },
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#f4f4f5', // zinc-100
+    backgroundColor: '#f4f4f5',
   },
-  dividerText: {
+  dividerLabel: {
     marginHorizontal: 12,
     fontSize: 12,
-    color: '#a1a1aa', // zinc-400
+    color: '#a1a1aa',
   },
-  footerContainer: {
+
+  footer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 32,
+    marginTop: 24,
   },
   footerText: {
     fontSize: 13,
@@ -168,7 +216,7 @@ const styles = StyleSheet.create({
   },
   footerLink: {
     fontSize: 13,
-    fontWeight: 'bold',
+    fontWeight: '600',
     color: '#10b981',
   },
 });
