@@ -1,23 +1,25 @@
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  Alert,
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-} from 'react-native';
-import { useRouter, Stack } from 'expo-router';
-import { useForm, Controller } from 'react-hook-form';
 import { Feather } from '@expo/vector-icons';
+import { Stack, useRouter } from 'expo-router';
+import React, { useState } from 'react';
+import { Controller, useForm } from 'react-hook-form';
+import {
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { CreateCategoryDTO, createCategory } from '@/features/dashboard/services/category.service';
 import { useAuth } from '@/features/auth/store/AuthContext';
+import { CreateCategoryDTO, createCategory } from '@/features/dashboard/services/category.service';
+
+
 
 const CATEGORY_COLORS = [
   '#10b981', '#ef4444', '#6366f1', '#f59e0b', '#ec4899',
@@ -30,7 +32,7 @@ const CATEGORY_ICONS = [
   'truck', 'film', 'globe', 'award', 'anchor',
 ];
 
-const TYPE_OPTIONS: Array<{ value: 'INCOME' | 'EXPENSE'; label: string; color: string }> = [
+const TYPE_OPTIONS: { value: 'INCOME' | 'EXPENSE'; label: string; color: string }[] = [
   { value: 'INCOME', label: 'Receita', color: '#10b981' },
   { value: 'EXPENSE', label: 'Despesa', color: '#ef4444' },
 ];
