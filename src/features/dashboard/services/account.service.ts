@@ -57,7 +57,7 @@ export async function updateAccount(id: number, data: UpdateAccountDTO): Promise
 
 export async function deleteAccount(id: number, userId: number): Promise<void> {
   const response = await api.delete(`/accounts/${id}`, {
-    data: { userId }, // Delete schema requires userId in body
+    data: { userId },
   });
   return response.data;
 }

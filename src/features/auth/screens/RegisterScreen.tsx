@@ -25,19 +25,38 @@ export default function RegisterScreen() {
   const [isLoading, setIsLoading] = React.useState(false);
 
   const handleRegister = async (values: FormValues) => {
+    // Validação defensiva antes de chamar a API
+    if (!values.name?.trim()) {
+      Alert.alert('Campo obrigatório', 'Informe seu nome completo.');
+      return;
+    }
+    if (!values.email?.trim() || !values.password) {
+      Alert.alert('Campos obrigatórios', 'Preencha todos os campos.');
+      return;
+    }
+
     try {
       setIsLoading(true);
-      await registerUser({ name: values.name!, email: values.email, password: values.password });
+      console.log('[Register] Dados do formulário:', { name: values.name, email: values.email });
+      await registerUser({
+        name: values.name.trim(),
+        email: values.email.trim().toLowerCase(),
+        password: values.password,
+      });
       Alert.alert(
         '✅ Conta criada!',
         'Sua conta foi criada com sucesso. Agora é só entrar!',
         [{ text: 'Entrar agora', onPress: () => router.replace('/(auth)/login') }]
       );
     } catch (error: any) {
+      const status = error?.response?.status;
+      const apiMsg = error?.response?.data?.message || error?.response?.data?.error;
       const msg =
-        error?.response?.status === 409
+        status === 409
           ? 'Este e-mail já está em uso. Tente outro ou faça login.'
-          : error?.response?.data?.message || 'Não foi possível criar a conta. Tente novamente.';
+          : status === 400
+          ? `Dados inválidos: ${apiMsg ?? 'verifique os campos e tente novamente.'}`
+          : apiMsg || 'Não foi possível criar a conta. Tente novamente.';
       Alert.alert('Erro ao criar conta', msg);
     } finally {
       setIsLoading(false);

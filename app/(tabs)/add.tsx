@@ -1,14 +1,8 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { View } from 'react-native';
 
+// Esta tela existe apenas para satisfazer o roteamento do Expo Router.
+// O botão "+" na toolbar é customizado no _layout.tsx e abre o QuickActionsMenu,
+// nunca navegando diretamente para esta tela.
 export default function AddScreen() {
-  return (
-    <View style={styles.container}>
-      <Text style={styles.text}>Add Transaction Modal / Screen</Text>
-    </View>
-  );
+  return <View />;
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F5F6F8' },
-  text: { fontSize: 18, fontWeight: 'bold', color: '#18181b' }
-});

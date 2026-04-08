@@ -28,8 +28,10 @@ export default function LoginScreen() {
   const handleLogin = async (values: FormValues) => {
     try {
       setIsLoading(true);
+      // loginUser já salva accessToken no SecureStore internamente
       const response = await loginUser({ email: values.email, password: values.password, name: '' });
-      login(response.token || 'session-token');
+      // Passa o accessToken retornado pela API para o context
+      login(response.accessToken || response.token || '');
     } catch (error: any) {
       const msg =
         error?.response?.status === 401

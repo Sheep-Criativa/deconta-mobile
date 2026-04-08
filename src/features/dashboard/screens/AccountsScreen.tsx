@@ -25,6 +25,7 @@ import {
   updateAccount,
   deleteAccount,
 } from '@/features/dashboard/services/account.service';
+import { useAuth } from '@/features/auth/store/AuthContext';
 
 // ─── Constantes de Identidade Visual ─────────────────────────────────────────
 
@@ -50,9 +51,6 @@ const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
 };
 
 const ACCOUNT_TYPES: AccountType[] = ['CHECKING', 'INVESTMENT', 'CREDIT_CARD', 'CASH'];
-
-// TODO: substituir pelo userId real do AuthContext/SecureStore
-const MOCK_USER_ID = 1;
 
 // ─── Formatação monetária ─────────────────────────────────────────────────────
 
@@ -285,6 +283,7 @@ function AccountFormModal({ visible, account, userId, onClose, onSaved }: Accoun
 
 export default function AccountsScreen() {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -292,9 +291,10 @@ export default function AccountsScreen() {
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
 
   const fetchAccounts = useCallback(async (showRefresh = false) => {
+    if (!user) return;
     try {
       showRefresh ? setRefreshing(true) : setLoading(true);
-      const data = await getAccounts(MOCK_USER_ID);
+      const data = await getAccounts(user.id);
       setAccounts(data);
     } catch {
       Alert.alert('Erro', 'Não foi possível carregar suas contas.');
@@ -302,7 +302,7 @@ export default function AccountsScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
 
@@ -322,7 +322,7 @@ export default function AccountsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await deleteAccount(account.id, MOCK_USER_ID);
+              await deleteAccount(account.id, user!.id);
               fetchAccounts();
             } catch {
               Alert.alert('Erro', 'Não foi possível excluir a conta.');
@@ -431,7 +431,7 @@ export default function AccountsScreen() {
       <AccountFormModal
         visible={modalVisible}
         account={editingAccount}
-        userId={MOCK_USER_ID}
+        userId={user?.id ?? 0}
         onClose={() => setModalVisible(false)}
         onSaved={() => { setModalVisible(false); fetchAccounts(); }}
       />

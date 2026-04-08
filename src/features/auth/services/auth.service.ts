@@ -21,12 +21,14 @@ export async function registerUser(data: RegisterData) {
             name: data.name,
             email: data.email,
             passwordHash: data.password,
-            password: data.password
         };
+        console.log('[registerUser] Enviando payload:', JSON.stringify(payload));
         const response = await api.post('/users', payload);
+        console.log('[registerUser] Resposta da API:', JSON.stringify(response.data));
         return response.data;
     } catch (error: any) {
-        console.error("Register Error:", error.response?.data || error.message);
+        console.error('[registerUser] Erro:', error.response?.data || error.message);
+        console.error('[registerUser] Status:', error.response?.status);
         throw error;
     }
 }
@@ -52,6 +54,13 @@ export async function loginUser(data: RegisterData) {
         return response.data;
     } catch (error: any) {
         console.error("Login Error:", error.response?.data || error.message);
+        console.error("Error Status:", error.response?.status);
+        console.error("Error Config:", {
+            url: error.config?.url,
+            method: error.config?.method,
+            data: error.config?.data
+        });
+        console.error("Full Error:", error);
         throw error;
     }
 }
