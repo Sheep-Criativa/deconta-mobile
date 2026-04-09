@@ -1,19 +1,160 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useAuth } from '@/features/auth/store/AuthContext';
+import { Account, getAccounts } from '@/features/dashboard/services/account.service';
+import { Transaction, getTransactions } from '@/features/dashboard/services/transaction.service';
+import { Statement, getStatements } from '@/features/dashboard/services/credit-card.service';
+import { Category, getCategories } from '@/features/dashboard/services/category.service';
+
+const ACCOUNT_COLORS: Record<string, string> = {
+  CHECKING: '#10b981',
+  INVESTMENT: '#6366f1',
+  CREDIT_CARD: '#f59e0b',
+  CASH: '#3b82f6',
+};
+
+const ACCOUNT_LABELS: Record<string, string> = {
+  CHECKING: 'Conta Corrente',
+  INVESTMENT: 'Investimento',
+  CREDIT_CARD: 'Cartão de Crédito',
+  CASH: 'Dinheiro',
+};
+
+const formatCurrency = (val: number) => 
+  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+
+const formatDate = (dateStr: string) => {
+  const d = new Date(dateStr);
+  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit' }).format(d);
+};
 
 export default function DashboardHomeScreen() {
+  const { user } = useAuth();
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [statements, setStatements] = useState<{accountId: number, statements: Statement[]}[]>([]);
+  
+  const [accountTab, setAccountTab] = useState<'contas' | 'credito'>('contas');
+  
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchData = useCallback(async (isRefresh = false) => {
+    if (!user?.id) return;
+    try {
+      isRefresh ? setRefreshing(true) : setLoading(true);
+
+      const [accData, txData, catData] = await Promise.all([
+        getAccounts(user.id).catch(() => []),
+        getTransactions(user.id).catch(() => []),
+        getCategories(user.id).catch(() => [])
+      ]);
+
+      setAccounts(accData);
+      setTransactions(txData);
+      setCategories(catData);
+
+      // Faturas de cartão de crédito
+      const creditCards = accData.filter(a => a.type === 'CREDIT_CARD' && a.isActive);
+      const statementsPromises = creditCards.map(cc => 
+        getStatements(cc.id)
+          .then(stmts => ({ accountId: cc.id, statements: stmts }))
+          .catch(() => ({ accountId: cc.id, statements: [] }))
+      );
+      
+      const statementsResults = await Promise.all(statementsPromises);
+      setStatements(statementsResults);
+
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const nonCcAccounts = useMemo(() => accounts.filter(a => a.type !== 'CREDIT_CARD' && a.isActive), [accounts]);
+  const ccAccounts = useMemo(() => accounts.filter(a => a.type === 'CREDIT_CARD' && a.isActive), [accounts]);
+
+  // KPIs
+  const totalBalance = accounts
+    .filter(a => a.isActive && a.type !== 'CREDIT_CARD')
+    .reduce((sum, a) => sum + Number(a.currentBalance), 0);
+
+  const ccUsed = accounts
+    .filter(a => a.isActive && a.type === 'CREDIT_CARD')
+    .reduce((sum, a) => sum + Math.abs(Number(a.currentBalance)), 0);
+
+  const livre = totalBalance - ccUsed;
+
+  const currentMonth = new Date().getMonth();
+  const currentYear = new Date().getFullYear();
+  const isCurrentMonth = (dateStr: string) => {
+    const d = new Date(dateStr);
+    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+  };
+  const isPrevMonth = (dateStr: string) => {
+    const d = new Date(dateStr);
+    const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+    const prevYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+    return d.getMonth() === prevMonth && d.getFullYear() === prevYear;
+  };
+
+  const currentTxs = transactions.filter(t => t.status !== 'PENDING' && isCurrentMonth(t.date));
+  const prevTxs = transactions.filter(t => t.status !== 'PENDING' && isPrevMonth(t.date));
+
+  const monthIncome = currentTxs.filter(t => t.type === 'INCOME').reduce((sum, t) => sum + Number(t.amount), 0);
+  const monthExpense = currentTxs.filter(t => t.type === 'EXPENSE').reduce((sum, t) => sum + Number(t.amount), 0);
+  
+  const prevIncome = prevTxs.filter(t => t.type === 'INCOME').reduce((sum, t) => sum + Number(t.amount), 0);
+  const prevExpense = prevTxs.filter(t => t.type === 'EXPENSE').reduce((sum, t) => sum + Number(t.amount), 0);
+
+  const incomeTrend = prevIncome > 0 ? ((monthIncome - prevIncome) / prevIncome) * 100 : 0;
+  const expenseTrend = prevExpense > 0 ? ((monthExpense - prevExpense) / prevExpense) * 100 : 0;
+
+  const recentTxs = [...transactions]
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 5);
+
+  const openStatements = useMemo(() => {
+    const open: {accountName: string, statement: Statement}[] = [];
+    statements.forEach(res => {
+      const acc = accounts.find(a => a.id === res.accountId);
+      const op = res.statements.find(s => s.status === 'OPEN');
+      if (op && acc) {
+        open.push({ accountName: acc.name, statement: op });
+      }
+    });
+    return open;
+  }, [statements, accounts]);
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#10b981" />
+      </View>
+    );
+  }
+
   return (
     <ScrollView 
       style={styles.container} 
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={() => fetchData(true)} tintColor="#10b981" />
+      }
     >
       <View style={styles.kpiStack}>
         <View style={styles.balanceCard}>
           <Text style={styles.balanceLabel}>Saldo Geral</Text>
-          <Text style={styles.balanceValue}>R$ 15.240,50</Text>
-          <Text style={styles.balanceSub}>Livre: R$ 12.000,00</Text>
+          <Text style={styles.balanceValue}>{formatCurrency(totalBalance)}</Text>
         </View>
 
         <View style={styles.rowKpi}>
@@ -22,8 +163,15 @@ export default function DashboardHomeScreen() {
               <Text style={styles.kpiLabel}>Receitas</Text>
               <Feather name="arrow-up-circle" size={16} color="#10b981" />
             </View>
-            <Text style={styles.kpiValue}>R$ 4.500,00</Text>
-            <Text style={[styles.kpiTrend, { color: '#10b981' }]}>+5.2%</Text>
+            <Text style={styles.kpiValue} numberOfLines={1} adjustsFontSizeToFit>{formatCurrency(monthIncome)}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
+              {incomeTrend !== 0 && (
+                <Feather name={incomeTrend > 0 ? 'arrow-up-right' : 'arrow-down-right'} size={12} color={incomeTrend >= 0 ? '#10b981' : '#f43f5e'} />
+              )}
+              <Text style={[styles.kpiTrend, { color: incomeTrend >= 0 ? '#10b981' : '#f43f5e' }]}>
+                {incomeTrend === 0 ? 'Mensal' : `${Math.abs(incomeTrend).toFixed(1)}%`}
+              </Text>
+            </View>
           </View>
 
           <View style={[styles.baseCard, styles.kpiHalfCard]}>
@@ -31,8 +179,15 @@ export default function DashboardHomeScreen() {
               <Text style={styles.kpiLabel}>Despesas</Text>
               <Feather name="arrow-down-circle" size={16} color="#f43f5e" />
             </View>
-            <Text style={styles.kpiValue}>R$ 2.150,00</Text>
-            <Text style={[styles.kpiTrend, { color: '#f43f5e' }]}>-1.4%</Text>
+            <Text style={styles.kpiValue} numberOfLines={1} adjustsFontSizeToFit>{formatCurrency(monthExpense)}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
+              {expenseTrend !== 0 && (
+                <Feather name={expenseTrend > 0 ? 'arrow-up-right' : 'arrow-down-right'} size={12} color={expenseTrend >= 0 ? '#f43f5e' : '#10b981'} />
+              )}
+              <Text style={[styles.kpiTrend, { color: expenseTrend > 0 ? '#f43f5e' : '#10b981' }]}>
+                {expenseTrend === 0 ? 'Mensal' : `${Math.abs(expenseTrend).toFixed(1)}%`}
+              </Text>
+            </View>
           </View>
         </View>
       </View>
@@ -41,53 +196,104 @@ export default function DashboardHomeScreen() {
         <View style={styles.baseCard}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Suas Contas</Text>
-            <TouchableOpacity hitSlop={{top:10,bottom:10,left:10,right:10}}>
-              <Text style={styles.linkText}>Gerenciar</Text>
-            </TouchableOpacity>
+            <View style={styles.tabsContainer}>
+              <TouchableOpacity
+                style={[styles.tabBtn, accountTab === 'contas' && styles.tabBtnActive]}
+                onClick={() => setAccountTab('contas')}
+                onPress={() => setAccountTab('contas')}
+              >
+                <Text style={[styles.tabBtnText, accountTab === 'contas' && styles.tabBtnTextActive]}>
+                  Contas
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.tabBtn, accountTab === 'credito' && styles.tabBtnActive]}
+                onClick={() => setAccountTab('credito')}
+                onPress={() => setAccountTab('credito')}
+              >
+                <Text style={[styles.tabBtnText, accountTab === 'credito' && styles.tabBtnTextActive]}>
+                  Crédito
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 12, paddingRight: 20 }}
-            style={{ marginHorizontal: -16, paddingHorizontal: 16 }}
-          >
-            <View style={[styles.accountCard, { backgroundColor: '#10b981' }]}>
-              <Text style={styles.accountType}>Conta Corrente</Text>
-              <Text style={styles.accountName}>Nubank</Text>
-              <Text style={styles.accountLabelSmall}>Saldo disponível</Text>
-              <Text style={styles.accountBalance}>R$ 5.240,50</Text>
-            </View>
-
-            <View style={[styles.accountCard, { backgroundColor: '#6366f1' }]}>
-              <Text style={styles.accountType}>Investimento</Text>
-              <Text style={styles.accountName}>Inter</Text>
-              <Text style={styles.accountLabelSmall}>Saldo disponível</Text>
-              <Text style={styles.accountBalance}>R$ 10.000,00</Text>
-            </View>
-          </ScrollView>
+          {accountTab === 'contas' ? (
+            nonCcAccounts.length === 0 ? (
+              <Text style={{color: '#a1a1aa', fontSize: 13}}>Nenhuma conta ativa.</Text>
+            ) : (
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 12, paddingRight: 20 }}
+                style={{ marginHorizontal: -16, paddingHorizontal: 16 }}
+              >
+                {nonCcAccounts.map(acc => (
+                  <View key={acc.id} style={[styles.accountCard, { backgroundColor: ACCOUNT_COLORS[acc.type] || '#18181b' }]}>
+                    <Text style={styles.accountType}>{ACCOUNT_LABELS[acc.type] || 'Outros'}</Text>
+                    <Text style={styles.accountName} numberOfLines={1}>{acc.name}</Text>
+                    <Text style={styles.accountLabelSmall}>Saldo disponível</Text>
+                    <Text style={styles.accountBalance} numberOfLines={1}>{formatCurrency(Number(acc.currentBalance))}</Text>
+                  </View>
+                ))}
+              </ScrollView>
+            )
+          ) : (
+            ccAccounts.length === 0 ? (
+              <Text style={{color: '#a1a1aa', fontSize: 13}}>Nenhum cartão cadastrado.</Text>
+            ) : (
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 12, paddingRight: 20 }}
+                style={{ marginHorizontal: -16, paddingHorizontal: 16 }}
+              >
+                {ccAccounts.map(acc => {
+                  const limit = Number(acc.limitAmount || 0);
+                  const used = Math.abs(Number(acc.currentBalance || 0));
+                  const availableLimit = Math.max(0, limit - used);
+                  
+                  return (
+                    <View key={acc.id} style={[styles.accountCard, { backgroundColor: '#18181b' }]}>
+                      <Text style={[styles.accountType, { opacity: 0.5 }]}>Cartão de Crédito</Text>
+                      <Text style={styles.accountName} numberOfLines={1}>{acc.name}</Text>
+                      <Text style={[styles.accountLabelSmall, { opacity: 0.5 }]}>Limite disponível</Text>
+                      <Text style={[styles.accountBalance, { color: '#34d399' }]} numberOfLines={1}>
+                        {formatCurrency(availableLimit)}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            )
+          )}
         </View>
 
-        <View style={styles.baseCard}>
-          <View style={styles.sectionHeader}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <View style={styles.iconBox}>
-                <Feather name="credit-card" size={14} color="#fff" />
+        {openStatements.length > 0 && (
+          <View style={styles.baseCard}>
+            <View style={styles.sectionHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={styles.iconBox}>
+                  <Feather name="credit-card" size={14} color="#fff" />
+                </View>
+                <Text style={styles.sectionTitle}>Faturas Abertas</Text>
               </View>
-              <Text style={styles.sectionTitle}>Faturas Abertas</Text>
             </View>
+
+            {openStatements.map((item, index) => (
+              <View key={index} style={[styles.invoiceItem, index > 0 && { marginTop: 8 }]}>
+                <View>
+                  <Text style={styles.invoiceName}>{item.accountName}</Text>
+                  <Text style={styles.invoiceDue}>Vence {formatDate(item.statement.dueDate)}</Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={styles.invoiceAmount}>{formatCurrency(Number(item.statement.totalAmount))}</Text>
+                  <Text style={styles.invoiceStatus}>Aberta</Text>
+                </View>
+              </View>
+            ))}
           </View>
-          <View style={styles.invoiceItem}>
-            <View>
-              <Text style={styles.invoiceName}>Cartão XP</Text>
-              <Text style={styles.invoiceDue}>Vence 10/05</Text>
-            </View>
-            <View style={{ alignItems: 'flex-end' }}>
-              <Text style={styles.invoiceAmount}>R$ 1.250,00</Text>
-              <Text style={styles.invoiceStatus}>Aberta</Text>
-            </View>
-          </View>
-        </View>
+        )}
 
         <View style={styles.baseCard}>
           <View style={styles.sectionHeader}>
@@ -102,27 +308,36 @@ export default function DashboardHomeScreen() {
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity style={styles.txRow}>
-            <View style={[styles.txIconBox, { backgroundColor: '#d1fae5' }]}>
-              <Feather name="dollar-sign" size={16} color="#059669" />
-            </View>
-            <View style={styles.txInfo}>
-              <Text style={styles.txDesc} numberOfLines={1}>Salário Mensal</Text>
-              <Text style={styles.txDate}>Hoje, 09:00</Text>
-            </View>
-            <Text style={[styles.txValue, { color: '#059669' }]}>+R$ 4.500,00</Text>
-          </TouchableOpacity>
+          {recentTxs.length === 0 ? (
+            <Text style={{color: '#a1a1aa', fontSize: 13}}>Nenhuma transação recente.</Text>
+          ) : (
+            recentTxs.map(tx => {
+              const isIncome = tx.type === 'INCOME';
+              const isExpense = tx.type === 'EXPENSE';
+              const cat = categories.find(c => c.id === tx.categoryId);
+              
+              const color = cat?.color || (isIncome ? '#059669' : (isExpense ? '#e11d48' : '#6366f1'));
+              const bgColor = (cat?.color || (isIncome ? '#10b981' : (isExpense ? '#f43f5e' : '#6366f1'))) + '1A'; // 10% opacity
+              const iconName = cat?.icon ? cat.icon : (isIncome ? 'arrow-up' : (isExpense ? 'arrow-down' : 'repeat'));
 
-          <TouchableOpacity style={styles.txRow}>
-            <View style={[styles.txIconBox, { backgroundColor: '#fee2e2' }]}>
-              <Feather name="shopping-bag" size={16} color="#e11d48" />
-            </View>
-            <View style={styles.txInfo}>
-              <Text style={styles.txDesc} numberOfLines={1}>Supermercado Extra</Text>
-              <Text style={styles.txDate}>Ontem, 20:30</Text>
-            </View>
-            <Text style={styles.txValue}>-R$ 350,00</Text>
-          </TouchableOpacity>
+              return (
+                <TouchableOpacity key={tx.id} style={styles.txRow}>
+                  <View style={[styles.txIconBox, { backgroundColor: bgColor }]}>
+                    <Feather name={iconName as any} size={16} color={color} />
+                  </View>
+                  <View style={styles.txInfo}>
+                    <Text style={styles.txDesc} numberOfLines={1}>
+                      {tx.description || cat?.name || (isExpense ? 'Despesa' : 'Receita')}
+                    </Text>
+                    <Text style={styles.txDate}>{formatDate(tx.date)}</Text>
+                  </View>
+                  <Text style={[styles.txValue, { color }]}>
+                    {isExpense ? '-' : '+'}{formatCurrency(Number(tx.amount))}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })
+          )}
         </View>
 
       </View>
@@ -200,7 +415,6 @@ const styles = StyleSheet.create({
   kpiTrend: {
     fontSize: 11,
     fontWeight: 'bold',
-    marginTop: 4,
   },
   mainStack: {
     gap: 20,
@@ -235,6 +449,34 @@ const styles = StyleSheet.create({
     backgroundColor: '#18181b',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  tabsContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#f4f4f5',
+    borderRadius: 999,
+    padding: 2,
+  },
+  tabBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  tabBtnActive: {
+    backgroundColor: '#ffffff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  tabBtnText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#a1a1aa',
+    textTransform: 'uppercase',
+  },
+  tabBtnTextActive: {
+    color: '#18181b',
   },
   accountCard: {
     width: 160,

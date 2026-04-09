@@ -4,9 +4,14 @@ import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '@/shared/constants/theme';
+import { useAuth } from '@/features/auth/store/AuthContext';
 
 export function TopBar() {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+
+  const displayName = user?.name ? user.name.split(' ')[0] : 'Visitante';
+  const initial = displayName.charAt(0).toUpperCase();
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -14,11 +19,11 @@ export function TopBar() {
         <View style={styles.userInfo}>
           {/* Avatar Base */}
           <View style={styles.avatarContainer}>
-            <Text style={styles.avatarFallback}>V</Text>
+            <Text style={styles.avatarFallback}>{initial}</Text>
           </View>
           <View>
             <Text style={styles.greetingText}>Olá,</Text>
-            <Text style={styles.nameText}>Visitante</Text>
+            <Text style={styles.nameText}>{displayName}</Text>
           </View>
         </View>
 

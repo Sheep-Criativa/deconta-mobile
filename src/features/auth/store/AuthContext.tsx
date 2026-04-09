@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { getMe } from '@/features/auth/services/auth.service';
+import { jwtDecode } from 'jwt-decode';
 
 interface AuthUser {
   id: number;
@@ -24,7 +25,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Verifica o token salvo E valida contra a API ao iniciar o app
+    // Verifica o token e extrai os dados diretamente (sem requisição extra ao backend)
     const checkToken = async () => {
       try {
         const token = await SecureStore.getItemAsync('accessToken');
@@ -32,9 +33,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setIsAuthenticated(false);
           return;
         }
-        // Valida o token contra a API e obtém o usuário logado
-        const me = await getMe();
-        setUser({ id: Number(me.id), name: me.name, email: me.email });
+        
+        // Decodifica o token localmente e pega o userId na mesma hora
+        const decoded: any = jwtDecode(token);
+        
+        // Valida expiração simples
+        if (decoded.exp && decoded.exp * 1000 < Date.now()) {
+          throw new Error('Token expirado');
+        }
+
+        setUser({ id: Number(decoded.userId), name: decoded.name || 'Usuário', email: decoded.email || '' });
         setIsAuthenticated(true);
       } catch {
         // Token inválido ou expirado: limpa tudo
@@ -51,14 +59,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (token: string) => {
     await SecureStore.setItemAsync('accessToken', token);
-    // Busca os dados do usuário após o login
     try {
-      const me = await getMe();
-      setUser({ id: me.id, name: me.name, email: me.email });
+      // Extrai os dados do usuário na mesma hora do token do backend
+      const decoded: any = jwtDecode(token);
+      
+      setUser({ id: Number(decoded.userId), name: decoded.name || 'Usuário', email: decoded.email || '' });
+      setIsAuthenticated(true);
     } catch {
       setUser(null);
+      setIsAuthenticated(false);
     }
-    setIsAuthenticated(true);
   };
 
   const logout = async () => {
