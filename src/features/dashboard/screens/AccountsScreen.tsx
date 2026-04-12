@@ -26,6 +26,7 @@ import {
   deleteAccount,
 } from '@/features/dashboard/services/account.service';
 import { useAuth } from '@/features/auth/store/AuthContext';
+import { CreditCardVisual } from '../components/CreditCardVisual';
 
 // ─── Constantes de Identidade Visual ─────────────────────────────────────────
 
@@ -120,15 +121,18 @@ interface AccountFormModalProps {
   visible: boolean;
   account: Account | null; // null = novo
   userId: number;
+  activeTab: 'CONTAS' | 'CARTOES';
   onClose: () => void;
   onSaved: () => void;
 }
 
-function AccountFormModal({ visible, account, userId, onClose, onSaved }: AccountFormModalProps) {
+function AccountFormModal({ visible, account, userId, activeTab, onClose, onSaved }: AccountFormModalProps) {
   const [name, setName] = useState('');
-  const [type, setType] = useState<AccountType>('CHECKING');
+  const [type, setType] = useState<AccountType>(activeTab === 'CARTOES' ? 'CREDIT_CARD' : 'CHECKING');
   const [balance, setBalance] = useState('');
   const [limit, setLimit] = useState('');
+  const [closingDay, setClosingDay] = useState('');
+  const [dueDay, setDueDay] = useState('');
   const [saving, setSaving] = useState(false);
 
   // Preenche campos ao editar
@@ -138,17 +142,26 @@ function AccountFormModal({ visible, account, userId, onClose, onSaved }: Accoun
       setType(account.type);
       setBalance(account.currentBalance.toString());
       setLimit(account.limitAmount?.toString() ?? '');
+      setClosingDay(account.closingDay?.toString() ?? '');
+      setDueDay(account.dueDay?.toString() ?? '');
     } else {
       setName('');
-      setType('CHECKING');
+      setType(activeTab === 'CARTOES' ? 'CREDIT_CARD' : 'CHECKING');
       setBalance('');
       setLimit('');
+      setClosingDay('');
+      setDueDay('');
     }
-  }, [account, visible]);
+  }, [account, visible, activeTab]);
+
+  const isEditing = !!account;
+  const isCreditCard = type === 'CREDIT_CARD';
 
   const handleSave = async () => {
     if (!name.trim()) return Alert.alert('Campo obrigatório', 'Informe o nome da conta.');
-    const balanceNum = parseFloat(balance.replace(',', '.'));
+    
+    const balanceStr = balance.trim() === '' ? '0' : balance;
+    const balanceNum = parseFloat(balanceStr.replace(',', '.'));
     if (isNaN(balanceNum)) return Alert.alert('Valor inválido', 'Informe o saldo inicial corretamente.');
 
     try {
@@ -157,11 +170,13 @@ function AccountFormModal({ visible, account, userId, onClose, onSaved }: Accoun
         userId,
         name: name.trim(),
         type,
-        initialBalance: account ? account.initialBalance : balanceNum,
-        currentBalance: balanceNum,
+        initialBalance: account ? Number(account.initialBalance || 0) : balanceNum,
+        currentBalance: account ? Number(account.currentBalance) : balanceNum,
         currencyCode: 'BRL',
-        limitAmount: limit ? parseFloat(limit.replace(',', '.')) : null,
-        isActive: true,
+        limitAmount: limit.trim() ? parseFloat(limit.replace(',', '.')) : undefined,
+        closingDay: isCreditCard ? closingDay.trim() || undefined : undefined,
+        dueDay: isCreditCard ? dueDay.trim() || undefined : undefined,
+        isActive: !!(account ? account.isActive : true),
       };
 
       if (account) {
@@ -172,7 +187,18 @@ function AccountFormModal({ visible, account, userId, onClose, onSaved }: Accoun
 
       onSaved();
     } catch (err: any) {
-      Alert.alert('Erro', err?.response?.data?.message ?? 'Não foi possível salvar a conta.');
+      let errorMessage = 'Não foi possível salvar a conta.';
+      const resData = err?.response?.data;
+      if (resData) {
+        if (typeof resData.error === 'string') {
+          errorMessage = resData.error;
+        } else if (Array.isArray(resData.error)) {
+          errorMessage = resData.error.map((e: any) => e.message).join('\n');
+        } else if (resData.message) {
+          errorMessage = resData.message;
+        }
+      }
+      Alert.alert('Erro', errorMessage);
     } finally {
       setSaving(false);
     }
@@ -184,7 +210,7 @@ function AccountFormModal({ visible, account, userId, onClose, onSaved }: Accoun
         <View style={modalStyles.root}>
           {/* Header do modal */}
           <View style={modalStyles.header}>
-            <Text style={modalStyles.title}>{account ? 'Editar conta' : 'Nova conta'}</Text>
+            <Text style={modalStyles.title}>{account ? (activeTab === 'CONTAS' ? 'Editar conta' : 'Editar cartão') : (activeTab === 'CONTAS' ? 'Nova conta' : 'Novo cartão')}</Text>
             <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
               <Feather name="x" size={22} color="#18181b" />
             </TouchableOpacity>
@@ -192,58 +218,106 @@ function AccountFormModal({ visible, account, userId, onClose, onSaved }: Accoun
 
           <ScrollView contentContainerStyle={modalStyles.body} keyboardShouldPersistTaps="handled">
             {/* Nome */}
-            <Text style={modalStyles.label}>Nome da conta</Text>
+            <Text style={modalStyles.label}>Nome</Text>
             <TextInput
               style={modalStyles.input}
-              placeholder="Ex: Nubank, XP, Carteira..."
+              placeholder={activeTab === 'CONTAS' ? "Ex: Nubank, XP, Carteira..." : "Ex: Nubank, Itaú..."}
               placeholderTextColor="#a1a1aa"
               value={name}
               onChangeText={setName}
             />
 
             {/* Tipo de conta */}
-            <Text style={modalStyles.label}>Tipo de conta</Text>
-            <View style={modalStyles.typeGrid}>
-              {ACCOUNT_TYPES.map((t) => {
-                const active = type === t;
-                const color = ACCOUNT_COLORS[t];
-                return (
-                  <TouchableOpacity
-                    key={t}
-                    style={[modalStyles.typeChip, active && { backgroundColor: color, borderColor: color }]}
-                    onPress={() => setType(t)}
-                    activeOpacity={0.8}
-                  >
-                    <Feather
-                      name={ACCOUNT_ICONS[t] as any}
-                      size={14}
-                      color={active ? '#fff' : '#71717a'}
-                    />
-                    <Text style={[modalStyles.typeChipText, active && { color: '#fff' }]}>
-                      {ACCOUNT_TYPE_LABELS[t]}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+            <Text style={modalStyles.label}>{activeTab === 'CONTAS' ? 'Tipo de conta' : 'Tipo'}</Text>
+            {isCreditCard && activeTab === 'CARTOES' ? (
+              <View style={[modalStyles.typeGrid, { marginBottom: 12 }]}>
+                <View style={[modalStyles.typeChip, { backgroundColor: '#18181b', borderColor: '#18181b' }]}>
+                  <Text style={{ fontSize: 13, marginRight: 4 }}>💳</Text>
+                  <Text style={[modalStyles.typeChipText, { color: '#fff', fontWeight: '800' }]}>
+                    Cartão de Crédito
+                  </Text>
+                </View>
+              </View>
+            ) : (
+              <View style={modalStyles.typeGrid}>
+                {ACCOUNT_TYPES.filter(t => t !== 'CREDIT_CARD').map((t) => {
+                  const active = type === t;
+                  const color = ACCOUNT_COLORS[t];
+                  return (
+                    <TouchableOpacity
+                      key={t}
+                      style={[modalStyles.typeChip, active && { backgroundColor: color, borderColor: color }, isEditing && { opacity: 0.6 }]}
+                      onPress={() => !isEditing && setType(t)}
+                      activeOpacity={0.8}
+                      disabled={isEditing}
+                    >
+                      <Feather
+                        name={ACCOUNT_ICONS[t] as any}
+                        size={14}
+                        color={active ? '#fff' : '#71717a'}
+                      />
+                      <Text style={[modalStyles.typeChipText, active && { color: '#fff' }]}>
+                        {ACCOUNT_TYPE_LABELS[t]}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+            {isEditing && !isCreditCard && (
+              <Text style={{ fontSize: 11, color: '#a1a1aa', marginTop: -8, marginBottom: 16 }}>
+                O tipo não pode ser alterado após a criação.
+              </Text>
+            )}
 
-            {/* Saldo */}
-            <Text style={modalStyles.label}>{account ? 'Saldo atual' : 'Saldo inicial'}</Text>
-            <View style={modalStyles.inputWrapper}>
-              <Text style={modalStyles.currencyPrefix}>R$</Text>
-              <TextInput
-                style={[modalStyles.input, { flex: 1, borderWidth: 0, marginBottom: 0 }]}
-                placeholder="0,00"
-                placeholderTextColor="#a1a1aa"
-                keyboardType="decimal-pad"
-                value={balance}
-                onChangeText={setBalance}
-              />
-            </View>
-
-            {/* Limite (só para crédito) */}
-            {type === 'CREDIT_CARD' && (
+            {/* Saldo - Apenas na criação e não CC */}
+            {!isEditing && !isCreditCard && (
               <>
+                <Text style={modalStyles.label}>Saldo inicial</Text>
+                <View style={modalStyles.inputWrapper}>
+                  <Text style={modalStyles.currencyPrefix}>R$</Text>
+                  <TextInput
+                    style={[modalStyles.input, { flex: 1, borderWidth: 0, marginBottom: 0 }]}
+                    placeholder="0,00"
+                    placeholderTextColor="#a1a1aa"
+                    keyboardType="decimal-pad"
+                    value={balance}
+                    onChangeText={setBalance}
+                  />
+                </View>
+              </>
+            )}
+
+            {/* Credit Card Specific Fields */}
+            {isCreditCard && (
+              <>
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={modalStyles.label}>Dia Fechamento</Text>
+                    <TextInput
+                      style={modalStyles.input}
+                      placeholder="Ex: 5"
+                      placeholderTextColor="#a1a1aa"
+                      keyboardType="number-pad"
+                      value={closingDay}
+                      onChangeText={setClosingDay}
+                      maxLength={2}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={modalStyles.label}>Vencimento</Text>
+                    <TextInput
+                      style={modalStyles.input}
+                      placeholder="Ex: 10"
+                      placeholderTextColor="#a1a1aa"
+                      keyboardType="number-pad"
+                      value={dueDay}
+                      onChangeText={setDueDay}
+                      maxLength={2}
+                    />
+                  </View>
+                </View>
+
                 <Text style={modalStyles.label}>Limite do cartão</Text>
                 <View style={modalStyles.inputWrapper}>
                   <Text style={modalStyles.currencyPrefix}>R$</Text>
@@ -269,7 +343,7 @@ function AccountFormModal({ visible, account, userId, onClose, onSaved }: Accoun
               {saving ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={modalStyles.saveButtonText}>{account ? 'Salvar alterações' : 'Criar conta'}</Text>
+                <Text style={modalStyles.saveButtonText}>{account ? 'Salvar alterações' : (activeTab === 'CONTAS' ? 'Criar conta' : 'Adicionar cartão')}</Text>
               )}
             </TouchableOpacity>
           </ScrollView>
@@ -289,6 +363,7 @@ export default function AccountsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
+  const [activeTab, setActiveTab] = useState<'CONTAS' | 'CARTOES'>('CONTAS');
 
   const fetchAccounts = useCallback(async (showRefresh = false) => {
     if (!user) return;
@@ -333,21 +408,26 @@ export default function AccountsScreen() {
     );
   };
 
-  const totalBalance = accounts
-    .filter((a) => a.isActive && a.type !== 'CREDIT_CARD')
+  const activeAccounts = accounts.filter((a) => a.isActive);
+  const currentItems = activeTab === 'CONTAS' 
+    ? activeAccounts.filter((a) => a.type !== 'CREDIT_CARD')
+    : activeAccounts.filter((a) => a.type === 'CREDIT_CARD');
+
+  const totalBalance = activeAccounts
+    .filter((a) => a.type !== 'CREDIT_CARD')
     .reduce((sum, a) => sum + a.currentBalance, 0);
 
-  const totalCreditUsed = accounts
-    .filter((a) => a.isActive && a.type === 'CREDIT_CARD')
+  const totalCreditUsed = activeAccounts
+    .filter((a) => a.type === 'CREDIT_CARD')
     .reduce((sum, a) => sum + Math.abs(a.currentBalance), 0);
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
+    <View style={styles.root}>
       {/* ── Header da tela ── */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerLabel}>MINHAS CONTAS</Text>
-          <Text style={styles.headerTitle}>Gerenciar</Text>
+          <Text style={styles.headerLabel}>FINANÇAS</Text>
+          <Text style={styles.headerTitle}>Contas & Cartões</Text>
         </View>
         <TouchableOpacity
           style={styles.addButton}
@@ -371,28 +451,51 @@ export default function AccountsScreen() {
           />
         }
       >
+        {/* ── Segmented Control ── */}
+        <View style={styles.segmentContainer}>
+          <TouchableOpacity
+            style={[styles.segmentButton, activeTab === 'CONTAS' && styles.segmentButtonActive]}
+            onPress={() => setActiveTab('CONTAS')}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.segmentLabel, activeTab === 'CONTAS' && styles.segmentLabelActive]}>
+              Contas
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.segmentButton, activeTab === 'CARTOES' && styles.segmentButtonActive]}
+            onPress={() => setActiveTab('CARTOES')}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.segmentLabel, activeTab === 'CARTOES' && styles.segmentLabelActive]}>
+              Cartões
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         {/* ── Cards de KPI ── */}
-        <View style={styles.kpiRow}>
-          <View style={[styles.kpiCard, { backgroundColor: '#10b981' }]}>
+        {activeTab === 'CONTAS' ? (
+          <View style={[styles.kpiCard, { backgroundColor: '#10b981', marginBottom: 16 }]}>
             <View style={styles.kpiCircle} />
             <Feather name="trending-up" size={17} color="rgba(255,255,255,0.7)" />
-            <Text style={styles.kpiLabel}>SALDO TOTAL</Text>
+            <Text style={styles.kpiLabel}>SALDO TOTAL (CONTAS)</Text>
             <Text style={styles.kpiValue}>{formatCurrency(totalBalance)}</Text>
           </View>
-          <View style={[styles.kpiCard, { backgroundColor: '#f59e0b' }]}>
+        ) : (
+          <View style={[styles.kpiCard, { backgroundColor: '#f59e0b', marginBottom: 16 }]}>
             <View style={styles.kpiCircle} />
             <Feather name="credit-card" size={17} color="rgba(255,255,255,0.7)" />
             <Text style={styles.kpiLabel}>CRÉDITO USADO</Text>
             <Text style={styles.kpiValue}>{formatCurrency(totalCreditUsed)}</Text>
           </View>
-        </View>
+        )}
 
-        {/* ── Lista de contas ── */}
+        {/* ── Lista de contas/cartões ── */}
         {loading ? (
           <View style={styles.centerState}>
             <ActivityIndicator size="large" color="#10b981" />
           </View>
-        ) : accounts.length === 0 ? (
+        ) : currentItems.length === 0 ? (
           <View style={styles.emptyState}>
             <View style={styles.emptyIconBox}>
               <Feather name="inbox" size={32} color="#a1a1aa" />
@@ -405,23 +508,32 @@ export default function AccountsScreen() {
               activeOpacity={0.85}
             >
               <Feather name="plus" size={16} color="#fff" style={{ marginRight: 8 }} />
-              <Text style={styles.emptyButtonText}>Adicionar conta</Text>
+              <Text style={styles.emptyButtonText}>Adicionar {activeTab === 'CONTAS' ? 'Conta' : 'Cartão'}</Text>
             </TouchableOpacity>
           </View>
         ) : (
           <>
             <Text style={styles.sectionTitle}>
-              {accounts.length} {accounts.length === 1 ? 'conta' : 'contas'} cadastradas
+              {currentItems.length} {currentItems.length === 1 ? (activeTab === 'CONTAS' ? 'conta cadastrada' : 'cartão cadastrado') : (activeTab === 'CONTAS' ? 'contas cadastradas' : 'cartões cadastrados')}
             </Text>
             <View style={styles.accountList}>
-              {accounts.map((account) => (
-                <AccountCard
-                  key={account.id}
-                  account={account}
-                  onEdit={handleEdit}
-                  onDelete={handleDelete}
-                />
-              ))}
+              {currentItems.map((account) => 
+                activeTab === 'CARTOES' ? (
+                  <CreditCardVisual
+                    key={account.id}
+                    account={account}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                  />
+                ) : (
+                  <AccountCard
+                    key={account.id}
+                    account={account}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                  />
+                )
+              )}
             </View>
           </>
         )}
@@ -432,6 +544,7 @@ export default function AccountsScreen() {
         visible={modalVisible}
         account={editingAccount}
         userId={user?.id ?? 0}
+        activeTab={activeTab}
         onClose={() => setModalVisible(false)}
         onSaved={() => { setModalVisible(false); fetchAccounts(); }}
       />
@@ -488,6 +601,38 @@ const styles = StyleSheet.create({
   /* Scroll */
   scroll: { flex: 1 },
   scrollContent: { padding: 16, gap: 16 },
+
+  /* Segmented Control */
+  segmentContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#e4e4e7',
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 8,
+  },
+  segmentButton: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+  },
+  segmentButtonActive: {
+    backgroundColor: '#ffffff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  segmentLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#71717a',
+  },
+  segmentLabelActive: {
+    color: '#18181b',
+  },
 
   /* KPI */
   kpiRow: {

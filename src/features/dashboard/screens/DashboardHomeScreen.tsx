@@ -318,12 +318,31 @@ export default function DashboardHomeScreen() {
               
               const color = cat?.color || (isIncome ? '#059669' : (isExpense ? '#e11d48' : '#6366f1'));
               const bgColor = (cat?.color || (isIncome ? '#10b981' : (isExpense ? '#f43f5e' : '#6366f1'))) + '1A'; // 10% opacity
-              const iconName = cat?.icon ? cat.icon : (isIncome ? 'arrow-up' : (isExpense ? 'arrow-down' : 'repeat'));
+              
+              // O banco traz icones do lucide-react (Ex: "Wallet", "Home", "Heart")
+              // Precisamos mapear os divergentes e converter o resto para kebab-case do Feather
+              const mappedIcons: Record<string, string> = {
+                'Wallet': 'briefcase',
+                'Landmark': 'home',
+                'GraduationCap': 'book',
+                'Plane': 'navigation',
+                'Car': 'truck'
+              };
+              
+              let featherIcon = isIncome ? 'arrow-up' : (isExpense ? 'arrow-down' : 'repeat');
+              
+              if (cat?.icon) {
+                if (mappedIcons[cat.icon]) {
+                  featherIcon = mappedIcons[cat.icon];
+                } else {
+                  featherIcon = cat.icon.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+                }
+              }
 
               return (
                 <TouchableOpacity key={tx.id} style={styles.txRow}>
                   <View style={[styles.txIconBox, { backgroundColor: bgColor }]}>
-                    <Feather name={iconName as any} size={16} color={color} />
+                    <Feather name={featherIcon as any} size={16} color={color} />
                   </View>
                   <View style={styles.txInfo}>
                     <Text style={styles.txDesc} numberOfLines={1}>
