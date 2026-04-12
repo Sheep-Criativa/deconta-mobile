@@ -100,9 +100,9 @@ export default function SettingsScreen() {
       <View style={styles.menuCard}>
         <MenuItem icon="help-circle" label="Central de ajuda" onPress={() => router.push('/support')} />
         <Divider />
-        <MenuItem icon="file-text" label="Termos de uso" />
+        <MenuItem icon="file-text" label="Termos de uso" onPress={() => router.push('/terms')} />
         <Divider />
-        <MenuItem icon="shield" label="Política de privacidade" />
+        <MenuItem icon="shield" label="Política de privacidade" onPress={() => router.push('/privacy')} />
       </View>
 
       {/* Botão Sair */}

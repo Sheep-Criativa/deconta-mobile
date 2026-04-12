@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -20,29 +22,51 @@ import {
   TransactionStatus,
   TransactionType,
   CreateTransactionDTO,
-  createTransactionSchema,
+  createTransaction,
 } from '@/features/dashboard/services/transaction.service';
-import { Account, getAccounts } from '@/features/dashboard/services/account.service';
+import { Account, getAccounts, AccountType } from '@/features/dashboard/services/account.service';
 import { Category, getCategories } from '@/features/dashboard/services/category.service';
 import { Responsible, getResponsibles } from '@/features/dashboard/services/responsible.service';
-import { createTransaction } from '@/features/dashboard/services/transaction.service';
 import { useAuth } from '@/features/auth/store/AuthContext';
 
-const STATUS_OPTIONS: Array<{ value: TransactionStatus; label: string; color: string }> = [
-  { value: 'PENDING', label: 'Pendente', color: '#f59e0b' },
-  { value: 'CONFIRMED', label: 'Confirmado', color: '#10b981' },
-  { value: 'RECONCILED', label: 'Conciliado', color: '#6366f1' },
+// Helper for date formatting DD/MM/YYYY
+const maskDate = (value: string) => {
+  return value
+    .replace(/\D/g, '')
+    .replace(/(\d{2})(\d)/, '$1/$2')
+    .replace(/(\d{2})(\d)/, '$1/$2')
+    .slice(0, 10);
+};
+
+const parseDateString = (dateStr: string) => {
+  const [day, month, year] = dateStr.split('/');
+  return new Date(`${year}-${month}-${day}T12:00:00Z`);
+};
+
+const todayStr = () => {
+  const d = new Date();
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+};
+
+const STATUS_OPTIONS: Array<{ value: TransactionStatus; label: string; color: string; icon: any }> = [
+  { value: 'CONFIRMED', label: 'Confirmado', color: '#10b981', icon: 'check-circle' },
+  { value: 'PENDING', label: 'Pendente', color: '#f59e0b', icon: 'clock' },
+  { value: 'RECONCILED', label: 'Conciliado', color: '#3b82f6', icon: 'shield' },
 ];
 
-interface FormValues {
-  amount: string;
-  description: string;
-  accountId: string;
-  categoryId: string;
-  responsibleId: string;
-  status: TransactionStatus;
-  date: Date;
-}
+const expenseSchema = z.object({
+  amount: z.string().min(1, 'Valor é obrigatório'),
+  description: z.string().max(250).optional(),
+  accountId: z.coerce.number().min(1, 'Selecione uma conta'),
+  categoryId: z.coerce.number().optional().default(0),
+  responsibleId: z.coerce.number().optional().default(0),
+  status: z.enum(['PENDING', 'CONFIRMED', 'RECONCILED']),
+  date: z.string().min(10, 'Data de compra inválida'),
+  paymentDate: z.string().min(10, 'Data de pagamento inválida'),
+  installmentTotal: z.coerce.number().min(1).max(36).optional().default(1),
+  notes: z.string().max(1000).optional(),
+});
+type ExpenseFormValues = z.infer<typeof expenseSchema>;
 
 export default function NewExpenseScreen() {
   const router = useRouter();
@@ -65,15 +89,19 @@ export default function NewExpenseScreen() {
     formState: { errors },
     setValue,
     watch,
-  } = useForm<FormValues>({
+  } = useForm<ExpenseFormValues>({
+    resolver: zodResolver(expenseSchema),
     defaultValues: {
       amount: '',
       description: '',
-      accountId: '',
-      categoryId: '',
-      responsibleId: '',
-      status: 'PENDING',
-      date: new Date(),
+      accountId: 0,
+      categoryId: 0,
+      responsibleId: 0,
+      status: 'CONFIRMED',
+      date: todayStr(),
+      paymentDate: todayStr(),
+      installmentTotal: 1,
+      notes: '',
     },
   });
 
@@ -81,73 +109,119 @@ export default function NewExpenseScreen() {
   const selectedCategoryId = watch('categoryId');
   const selectedResponsibleId = watch('responsibleId');
   const selectedStatus = watch('status');
+  const installmentTotal = watch('installmentTotal');
+  const amountStr = watch('amount');
 
-  const selectedAccount = accounts.find((a) => a.id.toString() === selectedAccountId);
-  const selectedCategory = categories.find((c) => c.id.toString() === selectedCategoryId);
-  const selectedResponsible = responsibles.find((r) => r.id.toString() === selectedResponsibleId);
+  const selectedAccount = accounts.find((a) => a.id === selectedAccountId);
+  const selectedCategory = categories.find((c) => c.id === selectedCategoryId);
+  const selectedResponsible = responsibles.find((r) => r.id === selectedResponsibleId);
+
+  const isCreditCard = selectedAccount?.type?.trim() === AccountType.CREDIT_CARD;
 
   const loadData = useCallback(async () => {
     if (!user) return;
-
     try {
       const [accountsData, categoriesData, responsiblesData] = await Promise.all([
         getAccounts(user?.id),
         getCategories(user?.id),
         getResponsibles(user?.id),
       ]);
-      setAccounts(accountsData);
-      setCategories(categoriesData.filter((c) => c.type === 'EXPENSE'));
-      setResponsibles(responsiblesData.filter((r) => r.isActive));
+      setAccounts(accountsData.filter(a => a.isActive));
+      setCategories(categoriesData.filter((c) => c.type.trim() === 'EXPENSE'));
+      
+      const activeResps = responsiblesData.filter((r) => r.isActive);
+      setResponsibles(activeResps);
+      
+      // Auto selecionar Responsável idêntico ao nome do usuário ou o primeiro
+      if (activeResps.length > 0) {
+        const userName = user.name?.trim().toLowerCase() ?? '';
+        const selfResp = activeResps.find(r => r.name.trim().toLowerCase() === userName) ?? activeResps[0];
+        setValue('responsibleId', selfResp.id);
+      }
     } catch {
       Alert.alert('Erro', 'Não foi possível carregar os dados.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user, setValue]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  const onSubmit = async (data: FormValues) => {
+  const onSubmit = async (data: ExpenseFormValues) => {
     if (!user) {
-      Alert.alert('Erro', 'Usuário não autenticado. Faça login novamente.');
+      Alert.alert('Erro', 'Sessão expirada. Faça login novamente.');
       return;
     }
 
     try {
       setSaving(true);
+      
+      let finalCatId = data.categoryId;
+      if (!finalCatId || finalCatId === 0) {
+        // Fallback para Categoria 'Geral'
+        const geral = categories.find(c => c.name.toLowerCase() === 'geral');
+        finalCatId = geral ? geral.id : categories[0]?.id; 
+      }
+
+      let finalRespId = data.responsibleId;
+      if (!finalRespId || finalRespId === 0) {
+        finalRespId = responsibles[0]?.id;
+      }
+
+      if (!finalCatId || !finalRespId) {
+        Alert.alert('Aviso', 'Nenhuma categoria ou responsável cadastrado disponível.');
+        return;
+      }
+
+      const numericAmount = parseFloat(data.amount.replace(',', '.'));
+      const finalAmount = (isCreditCard && data.installmentTotal > 1) 
+        ? numericAmount / data.installmentTotal 
+        : numericAmount;
+
+      const dateObj = parseDateString(data.date);
+      const paymentDateObj = parseDateString(isCreditCard ? data.date : data.paymentDate);
 
       const dto: CreateTransactionDTO = {
-        userId: user?.id,
-        accountId: parseInt(data.accountId, 10),
-        categoryId: parseInt(data.categoryId, 10),
-        responsibleId: parseInt(data.responsibleId, 10),
+        userId: user.id,
+        accountId: data.accountId,
+        categoryId: finalCatId,
+        responsibleId: finalRespId,
         description: data.description || null,
-        amount: parseFloat(data.amount.replace(',', '.')),
-        date: data.date,
-        paymentDate: data.date,
-        type: 'EXPENSE' as TransactionType,
-        status: data.status,
+        amount: Number(finalAmount.toFixed(2)),
+        date: dateObj.toISOString(),
+        paymentDate: paymentDateObj.toISOString(),
+        type: 'EXPENSE',
+        status: isCreditCard ? 'CONFIRMED' : data.status,
+        ...(isCreditCard && {
+          installmentTotal: data.installmentTotal,
+        })
       };
 
       await createTransaction(dto);
-      router.back();
+      Alert.alert('Sucesso', 'Lançamento registrado com sucesso!', [
+        { text: 'OK', onPress: () => router.back() }
+      ]);
     } catch (err: any) {
-      Alert.alert('Erro', err?.response?.data?.message ?? 'Não foi possível salvar a despesa.');
+      Alert.alert('Erro', err?.response?.data?.message || 'Não foi possível salvar a despesa.');
     } finally {
       setSaving(false);
     }
   };
 
   const renderDropdown = (
-    value: string,
+    value: number,
     placeholder: string,
     selectedItem: any,
     items: any[],
-    onSelect: (id: string) => void,
+    onSelect: (id: number) => void,
     onToggle: () => void,
-    isOpen: boolean
+    isOpen: boolean,
+    showEmptyOpt?: boolean,
+    emptyIcon?: string,
+    emptyColor?: string,
+    emptyLabel?: string,
   ) => (
     <View>
       <TouchableOpacity
@@ -156,9 +230,19 @@ export default function NewExpenseScreen() {
         activeOpacity={0.7}
       >
         {selectedItem ? (
-          <Text style={styles.dropdownValue}>{selectedItem.name}</Text>
+          <View style={styles.dropdownValueBox}>
+            {selectedItem.color && <View style={[styles.colorDot, { backgroundColor: selectedItem.color }]}/>}
+            <Text style={styles.dropdownValue}>{selectedItem.name}</Text>
+          </View>
         ) : (
-          <Text style={styles.dropdownPlaceholder}>{placeholder}</Text>
+          value === 0 && showEmptyOpt ? (
+            <View style={styles.dropdownValueBox}>
+              <View style={[styles.colorDot, { backgroundColor: emptyColor }]}/>
+              <Text style={[styles.dropdownValue, { color: '#a1a1aa' }]}>{emptyLabel}</Text>
+            </View>
+          ) : (
+            <Text style={styles.dropdownPlaceholder}>{placeholder}</Text>
+          )
         )}
         <Feather name={isOpen ? 'chevron-up' : 'chevron-down'} size={18} color="#71717a" />
       </TouchableOpacity>
@@ -166,23 +250,43 @@ export default function NewExpenseScreen() {
       {isOpen && (
         <View style={styles.dropdownList}>
           <ScrollView style={styles.dropdownScroll} nestedScrollEnabled>
-            {items.map((item) => (
+            {showEmptyOpt && (
               <TouchableOpacity
-                key={item.id}
-                style={[styles.dropdownItem, value === item.id.toString() && styles.dropdownItemSelected]}
+                style={[styles.dropdownItem, value === 0 && styles.dropdownItemSelected]}
                 onPress={() => {
-                  onSelect(item.id.toString());
+                  onSelect(0);
                   onToggle();
                 }}
               >
-                <Text
-                  style={[
-                    styles.dropdownItemText,
-                    value === item.id.toString() && styles.dropdownItemTextSelected,
-                  ]}
-                >
-                  {item.name}
-                </Text>
+                <View style={styles.dropdownValueBox}>
+                  <View style={[styles.colorDot, { backgroundColor: emptyColor }]}/>
+                  <Text style={[styles.dropdownItemText, { color: '#a1a1aa' }, value === 0 && styles.dropdownItemTextSelected]}>
+                    {emptyLabel}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            )}
+
+            {items.map((item) => (
+              <TouchableOpacity
+                key={item.id}
+                style={[styles.dropdownItem, value === item.id && styles.dropdownItemSelected]}
+                onPress={() => {
+                  onSelect(item.id);
+                  onToggle();
+                }}
+              >
+                <View style={styles.dropdownValueBox}>
+                  {item.color && <View style={[styles.colorDot, { backgroundColor: item.color }]}/>}
+                  <Text
+                    style={[
+                      styles.dropdownItemText,
+                      value === item.id && styles.dropdownItemTextSelected,
+                    ]}
+                  >
+                    {item.name} {item.type?.trim() === AccountType.CREDIT_CARD && '💳'}
+                  </Text>
+                </View>
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -203,13 +307,15 @@ export default function NewExpenseScreen() {
     <>
       <Stack.Screen
         options={{
-          title: 'Nova Despesa',
+          title: isCreditCard ? 'Nova Despesa no Cartão' : 'Nova Despesa',
           headerShown: true,
           headerLeft: () => (
             <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
               <Feather name="x" size={22} color="#18181b" />
             </TouchableOpacity>
           ),
+          headerStyle: { backgroundColor: '#ffffff' },
+          headerShadowVisible: false,
         }}
       />
 
@@ -223,23 +329,18 @@ export default function NewExpenseScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
+
+          {/* Valor */}
           <Controller
             control={control}
             name="amount"
-            rules={{
-              required: 'Valor é obrigatório',
-              pattern: {
-                value: /^\d+([,.]\d+)?$/,
-                message: 'Valor inválido',
-              },
-            }}
             render={({ field: { onChange, value } }) => (
               <View>
-                <Text style={styles.label}>Valor</Text>
+                <Text style={styles.sectionTitle}>VALOR (R$)</Text>
                 <View style={styles.inputWrapper}>
                   <Text style={styles.currencyPrefix}>R$</Text>
                   <TextInput
-                    style={[styles.input, { flex: 1, borderWidth: 0 }]}
+                    style={[styles.input, { flex: 1, borderWidth: 0, fontSize: 24, fontWeight: 'bold' }]}
                     placeholder="0,00"
                     placeholderTextColor="#a1a1aa"
                     keyboardType="decimal-pad"
@@ -252,15 +353,202 @@ export default function NewExpenseScreen() {
             )}
           />
 
+          {/* Contas e Categorias */}
+          <View style={styles.row}>
+            <Controller
+              control={control}
+              name="accountId"
+              render={({ field: { value } }) => (
+                <View style={styles.flex1}>
+                  <Text style={styles.sectionTitle}>CONTA</Text>
+                  {renderDropdown(
+                    value,
+                    'Selecione...',
+                    selectedAccount,
+                    accounts,
+                    (id) => setValue('accountId', id),
+                    () => setShowAccountDropdown(!showAccountDropdown),
+                    showAccountDropdown
+                  )}
+                  {errors.accountId && <Text style={styles.error}>{errors.accountId.message}</Text>}
+                </View>
+              )}
+            />
+
+            <Controller
+              control={control}
+              name="categoryId"
+              render={({ field: { value } }) => (
+                <View style={styles.flex1}>
+                  <Text style={styles.sectionTitle}>CATEGORIA</Text>
+                  {renderDropdown(
+                    value,
+                    'Categoria...',
+                    selectedCategory,
+                    categories,
+                    (id) => setValue('categoryId', id),
+                    () => setShowCategoryDropdown(!showCategoryDropdown),
+                    showCategoryDropdown,
+                    true, 'tag', '#d4d4d8', 'Sem Categoria'
+                  )}
+                  {errors.categoryId && <Text style={styles.error}>{errors.categoryId.message}</Text>}
+                </View>
+              )}
+            />
+          </View>
+
+          {/* Responsável */}
+          <Controller
+            control={control}
+            name="responsibleId"
+            render={({ field: { value } }) => (
+              <View>
+                <Text style={styles.sectionTitle}>RESPONSÁVEL</Text>
+                {renderDropdown(
+                  value,
+                  'Responsável...',
+                  selectedResponsible,
+                  responsibles,
+                  (id) => setValue('responsibleId', id),
+                  () => setShowResponsibleDropdown(!showResponsibleDropdown),
+                  showResponsibleDropdown,
+                  true, 'user', '#d4d4d8', 'Sem Responsável'
+                )}
+                {errors.responsibleId && <Text style={styles.error}>{errors.responsibleId.message}</Text>}
+              </View>
+            )}
+          />
+
+          {/* Datas */}
+          <View style={styles.row}>
+            <Controller
+              control={control}
+              name="date"
+              render={({ field: { onChange, value } }) => (
+                <View style={styles.flex1}>
+                  <Text style={styles.sectionTitle}>{isCreditCard ? 'DATA DA COMPRA' : 'DATA'}</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="DD/MM/AAAA"
+                    placeholderTextColor="#a1a1aa"
+                    keyboardType="number-pad"
+                    value={value}
+                    onChangeText={(t) => onChange(maskDate(t))}
+                    maxLength={10}
+                  />
+                  {errors.date && <Text style={styles.error}>{errors.date.message}</Text>}
+                </View>
+              )}
+            />
+
+            {!isCreditCard && (
+              <Controller
+                control={control}
+                name="paymentDate"
+                render={({ field: { onChange, value } }) => (
+                  <View style={styles.flex1}>
+                    <Text style={styles.sectionTitle}>DATA VENCIMENTO</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="DD/MM/AAAA"
+                      placeholderTextColor="#a1a1aa"
+                      keyboardType="number-pad"
+                      value={value}
+                      onChangeText={(t) => onChange(maskDate(t))}
+                      maxLength={10}
+                    />
+                    {errors.paymentDate && <Text style={styles.error}>{errors.paymentDate.message}</Text>}
+                  </View>
+                )}
+              />
+            )}
+          </View>
+
+          {/* Parcelas para Cartão */}
+          {isCreditCard && (
+            <Controller
+              control={control}
+              name="installmentTotal"
+              render={({ field: { onChange, value } }) => (
+                <View>
+                  <Text style={styles.sectionTitle}>PARCELAS</Text>
+                  <View style={styles.installmentsRow}>
+                    {[1, 2, 3, 6, 9, 12].map(n => (
+                      <TouchableOpacity
+                        key={n}
+                        style={[
+                          styles.installmentChip,
+                          value === n && styles.installmentChipSelected,
+                        ]}
+                        onPress={() => onChange(n)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[
+                          styles.installmentChipText,
+                          value === n && styles.installmentChipTextSelected
+                        ]}>{n}x</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  {value > 1 && (
+                    <View style={styles.divInfo}>
+                      <Text style={styles.divInfoText}>
+                        {value}x de R$ {(Number(amountStr.replace(',','.')) / value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </Text>
+                    </View>
+                  )}
+                  {errors.installmentTotal && <Text style={styles.error}>{errors.installmentTotal.message}</Text>}
+                </View>
+              )}
+            />
+          )}
+
+          {/* Status (Hidden in CC because the bill resolves it) */}
+          {!isCreditCard && (
+            <Controller
+              control={control}
+              name="status"
+              render={({ field: { onChange, value } }) => (
+                <View>
+                  <Text style={styles.sectionTitle}>STATUS</Text>
+                  <View style={styles.statusRow}>
+                    {STATUS_OPTIONS.map((option) => (
+                      <TouchableOpacity
+                        key={option.value}
+                        style={[
+                          styles.statusChip,
+                          value === option.value && { backgroundColor: option.color, borderColor: option.color },
+                        ]}
+                        onPress={() => onChange(option.value)}
+                        activeOpacity={0.8}
+                      >
+                        <Feather name={option.icon as any} size={14} color={value === option.value ? '#fff' : '#a1a1aa'} style={{ marginRight: 4 }} />
+                        <Text
+                          style={[
+                            styles.statusChipText,
+                            value === option.value && { color: '#ffffff' },
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+            />
+          )}
+
+          {/* Descrição */}
           <Controller
             control={control}
             name="description"
             render={({ field: { onChange, value } }) => (
               <View>
-                <Text style={styles.label}>Descrição (opcional)</Text>
+                <Text style={styles.sectionTitle}>DESCRIÇÃO (OPCIONAL)</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="Ex: Almoço, Transporte..."
+                  placeholder="Ex: Supermercado, Netflix..."
                   placeholderTextColor="#a1a1aa"
                   value={value}
                   onChangeText={onChange}
@@ -270,99 +558,23 @@ export default function NewExpenseScreen() {
             )}
           />
 
+          {/* Comentários/Notas Opcional */}
           <Controller
             control={control}
-            name="accountId"
-            rules={{ required: 'Conta é obrigatória' }}
-            render={({ field: { value } }) => (
-              <View>
-                <Text style={styles.label}>Conta</Text>
-                {renderDropdown(
-                  value,
-                  'Selecione a conta',
-                  selectedAccount,
-                  accounts,
-                  (id) => setValue('accountId', id),
-                  () => setShowAccountDropdown(!showAccountDropdown),
-                  showAccountDropdown
-                )}
-                {errors.accountId && <Text style={styles.error}>{errors.accountId.message}</Text>}
-              </View>
-            )}
-          />
-
-          <Controller
-            control={control}
-            name="categoryId"
-            rules={{ required: 'Categoria é obrigatória' }}
-            render={({ field: { value } }) => (
-              <View>
-                <Text style={styles.label}>Categoria</Text>
-                {renderDropdown(
-                  value,
-                  'Selecione a categoria',
-                  selectedCategory,
-                  categories,
-                  (id) => setValue('categoryId', id),
-                  () => setShowCategoryDropdown(!showCategoryDropdown),
-                  showCategoryDropdown
-                )}
-                {errors.categoryId && <Text style={styles.error}>{errors.categoryId.message}</Text>}
-              </View>
-            )}
-          />
-
-          <Controller
-            control={control}
-            name="responsibleId"
-            rules={{ required: 'Responsável é obrigatório' }}
-            render={({ field: { value } }) => (
-              <View>
-                <Text style={styles.label}>Responsável</Text>
-                {renderDropdown(
-                  value,
-                  'Selecione o responsável',
-                  selectedResponsible,
-                  responsibles,
-                  (id) => setValue('responsibleId', id),
-                  () => setShowResponsibleDropdown(!showResponsibleDropdown),
-                  showResponsibleDropdown
-                )}
-                {errors.responsibleId && (
-                  <Text style={styles.error}>{errors.responsibleId.message}</Text>
-                )}
-              </View>
-            )}
-          />
-
-          <Controller
-            control={control}
-            name="status"
+            name="notes"
             render={({ field: { onChange, value } }) => (
               <View>
-                <Text style={styles.label}>Status</Text>
-                <View style={styles.statusRow}>
-                  {STATUS_OPTIONS.map((option) => (
-                    <TouchableOpacity
-                      key={option.value}
-                      style={[
-                        styles.statusChip,
-                        value === option.value && { backgroundColor: option.color, borderColor: option.color },
-                      ]}
-                      onPress={() => onChange(option.value)}
-                      activeOpacity={0.8}
-                    >
-                      <Text
-                        style={[
-                          styles.statusChipText,
-                          value === option.value && { color: '#ffffff' },
-                        ]}
-                      >
-                        {option.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                <Text style={styles.sectionTitle}>COMENTÁRIOS / OBSERVAÇÕES</Text>
+                <TextInput
+                  style={[styles.input, styles.textArea]}
+                  placeholder="Alguma nota adicional..."
+                  placeholderTextColor="#a1a1aa"
+                  value={value}
+                  onChangeText={onChange}
+                  multiline
+                  numberOfLines={4}
+                  textAlignVertical="top"
+                />
               </View>
             )}
           />
@@ -376,7 +588,9 @@ export default function NewExpenseScreen() {
             {saving ? (
               <ActivityIndicator color="#ffffff" />
             ) : (
-              <Text style={styles.saveButtonText}>Salvar Despesa</Text>
+              <Text style={styles.saveButtonText}>
+                {isCreditCard && installmentTotal > 1 ? `Lançar ${installmentTotal} parcelas` : 'Salvar Despesa'}
+              </Text>
             )}
           </TouchableOpacity>
         </ScrollView>
@@ -386,48 +600,46 @@ export default function NewExpenseScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-  },
-  content: {
-    padding: 20,
-    gap: 4,
-  },
-  center: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#27272a',
-    marginBottom: 8,
-    marginTop: 16,
+  root: { flex: 1, backgroundColor: '#ffffff' },
+  content: { padding: 20, gap: 16 },
+  center: { justifyContent: 'center', alignItems: 'center' },
+  row: { flexDirection: 'row', gap: 12 },
+  flex1: { flex: 1 },
+  sectionTitle: {
+    fontSize: 11,
+    fontFamily: 'Poppins_600SemiBold',
+    color: '#a1a1aa',
+    letterSpacing: 1.2,
+    marginBottom: 6,
   },
   input: {
-    height: 48,
+    minHeight: 48,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e4e4e7',
     backgroundColor: '#fafafa',
     paddingHorizontal: 14,
-    fontSize: 16,
+    fontSize: 15,
+    fontFamily: 'Poppins_500Medium',
     color: '#18181b',
+  },
+  textArea: {
+    paddingTop: 12,
+    height: 86,
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 48,
-    borderRadius: 12,
+    height: 60,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#e4e4e7',
     backgroundColor: '#fafafa',
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
   },
   currencyPrefix: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 20,
+    fontFamily: 'Poppins_600SemiBold',
     color: '#71717a',
     marginRight: 8,
   },
@@ -442,17 +654,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  dropdownOpen: {
-    borderColor: '#ef4444',
-  },
-  dropdownPlaceholder: {
-    fontSize: 16,
-    color: '#a1a1aa',
-  },
-  dropdownValue: {
-    fontSize: 16,
-    color: '#18181b',
-  },
+  dropdownOpen: { borderColor: '#ef4444' },
+  dropdownValueBox: { flexDirection: 'row', alignItems: 'center', gap: 8, width: '85%' },
+  colorDot: { width: 10, height: 10, borderRadius: 5 },
+  dropdownPlaceholder: { fontSize: 14, fontFamily: 'Poppins_500Medium', color: '#a1a1aa' },
+  dropdownValue: { fontSize: 14, fontFamily: 'Poppins_500Medium', color: '#18181b' },
   dropdownList: {
     marginTop: 4,
     borderRadius: 12,
@@ -460,74 +666,77 @@ const styles = StyleSheet.create({
     borderColor: '#e4e4e7',
     backgroundColor: '#ffffff',
     maxHeight: 180,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
     elevation: 4,
   },
-  dropdownScroll: {
-    padding: 4,
-  },
-  dropdownItem: {
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-  },
-  dropdownItemSelected: {
-    backgroundColor: '#ef444420',
-  },
-  dropdownItemText: {
-    fontSize: 15,
-    color: '#18181b',
-  },
-  dropdownItemTextSelected: {
-    color: '#ef4444',
-    fontWeight: '600',
-  },
-  statusRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
+  dropdownScroll: { padding: 4 },
+  dropdownItem: { paddingVertical: 12, paddingHorizontal: 14, borderRadius: 8 },
+  dropdownItemSelected: { backgroundColor: '#ef444415' },
+  dropdownItemText: { fontSize: 14, fontFamily: 'Poppins_500Medium', color: '#18181b' },
+  dropdownItemTextSelected: { color: '#ef4444', fontFamily: 'Poppins_600SemiBold' },
+  statusRow: { flexDirection: 'row', gap: 8 },
   statusChip: {
     flex: 1,
-    height: 40,
-    borderRadius: 10,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#e4e4e7',
+    backgroundColor: '#fafafa',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  statusChipText: { fontSize: 13, fontFamily: 'Poppins_600SemiBold', color: '#71717a' },
+  installmentsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  installmentChip: {
+    flex: 1,
+    minWidth: '28%',
+    height: 44,
+    borderRadius: 12,
     borderWidth: 1.5,
     borderColor: '#e4e4e7',
     backgroundColor: '#fafafa',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  statusChipText: {
-    fontSize: 13,
-    fontWeight: '600',
+  installmentChipSelected: {
+    borderColor: '#18181b',
+    backgroundColor: '#18181b',
+  },
+  installmentChipText: {
+    fontSize: 14,
+    fontFamily: 'Poppins_600SemiBold',
     color: '#71717a',
   },
-  saveButton: {
-    height: 52,
-    backgroundColor: '#ef4444',
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 32,
-    shadowColor: '#ef4444',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  saveButtonDisabled: {
-    opacity: 0.7,
-  },
-  saveButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
+  installmentChipTextSelected: {
     color: '#ffffff',
   },
-  error: {
-    fontSize: 12,
-    color: '#ef4444',
-    marginTop: 4,
+  divInfo: {
+    marginTop: 8,
+    backgroundColor: '#f4f4f5',
+    padding: 10,
+    borderRadius: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#10b981',
   },
+  divInfoText: {
+    fontSize: 13,
+    fontFamily: 'Poppins_500Medium',
+    color: '#52525b',
+  },
+  saveButton: {
+    height: 56,
+    backgroundColor: '#18181b',
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 24,
+    elevation: 8,
+  },
+  saveButtonDisabled: { opacity: 0.7 },
+  saveButtonText: { fontSize: 16, fontFamily: 'Poppins_600SemiBold', color: '#ffffff' },
+  error: { fontSize: 12, fontFamily: 'Poppins_500Medium', color: '#ef4444', marginTop: 4 },
 });
