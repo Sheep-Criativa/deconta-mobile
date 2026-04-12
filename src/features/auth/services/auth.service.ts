@@ -99,3 +99,13 @@ export async function updateProfile(id: number, data: RegisterData) {
     const response = await api.put(`/users/${id}`, data);
     return response.data as User;
 }
+
+export async function updateUser(id: number, data: { name: string; email: string; passwordHash: string }) {
+  const response = await api.put(`/users/${id}`, data);
+  return response.data as User;
+}
+
+export async function updateFirstAccess(id: number, firstAccess: boolean) {
+  const response = await api.patch(`/users/${id}/first-access`, { firstAccess });
+  return response.data as User;
+}
