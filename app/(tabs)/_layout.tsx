@@ -101,7 +101,7 @@ export default function TabLayout() {
         <Tabs.Screen
           name="accounts"
           options={{
-            title: 'Cartões',
+            title: 'Contas/Cartões',
             tabBarIcon: ({ color }) => <Ionicons size={22} name="card-outline" color={color} />,
           }}
         />

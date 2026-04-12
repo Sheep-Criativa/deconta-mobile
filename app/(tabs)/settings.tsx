@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 
 import { useAuth } from '@/features/auth/store/AuthContext';
 import { logoutUser } from '@/features/auth/services/auth.service';
@@ -16,6 +17,7 @@ import { logoutUser } from '@/features/auth/services/auth.service';
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
+  const router = useRouter();
 
   const initials = user?.name
     ? user.name
@@ -73,18 +75,16 @@ export default function SettingsScreen() {
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           activeOpacity={0.7}
         >
-          <Feather name="edit-2" size={16} color="#10b981" />
+          <Feather name="edit-2" size={16} color="#10b981" onPress={() => router.push('/profile')} />
         </TouchableOpacity>
       </View>
 
       {/* Seção: Conta */}
       <Text style={styles.sectionTitle}>Conta</Text>
       <View style={styles.menuCard}>
-        <MenuItem icon="user" label="Dados pessoais" />
+        <MenuItem icon="user" label="Dados pessoais" onPress={() => router.push('/profile')} />
         <Divider />
-        <MenuItem icon="lock" label="Alterar senha" />
-        <Divider />
-        <MenuItem icon="bell" label="Notificações" />
+        <MenuItem icon="lock" label="Alterar senha" onPress={() => router.push('/change-password')} />
       </View>
 
       {/* Seção: Preferências */}
@@ -98,7 +98,7 @@ export default function SettingsScreen() {
       {/* Seção: Suporte */}
       <Text style={styles.sectionTitle}>Suporte</Text>
       <View style={styles.menuCard}>
-        <MenuItem icon="help-circle" label="Central de ajuda" />
+        <MenuItem icon="help-circle" label="Central de ajuda" onPress={() => router.push('/support')} />
         <Divider />
         <MenuItem icon="file-text" label="Termos de uso" />
         <Divider />
@@ -124,13 +124,15 @@ function MenuItem({
   icon,
   label,
   value,
+  onPress,
 }: {
   icon: React.ComponentProps<typeof Feather>['name'];
   label: string;
   value?: string;
+  onPress?: () => void;
 }) {
   return (
-    <TouchableOpacity style={styles.menuItem} activeOpacity={0.6}>
+    <TouchableOpacity style={styles.menuItem} activeOpacity={0.6} onPress={onPress}>
       <View style={styles.menuIconBox}>
         <Feather name={icon} size={17} color="#10b981" />
       </View>
