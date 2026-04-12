@@ -77,9 +77,9 @@ export default function SupportScreen() {
           title: 'Central de Ajuda',
           headerBackTitle: 'Voltar',
           headerStyle: {
-            backgroundColor: '#ffffff',
+            backgroundColor: '#18181b',
           },
-          headerTintColor: '#18181b',
+          headerTintColor: '#fff',
           headerShadowVisible: false,
           headerTitleStyle: {
             fontFamily: 'Poppins_600SemiBold',
