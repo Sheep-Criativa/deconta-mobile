@@ -83,15 +83,34 @@ export default function DashboardHomeScreen() {
   const ccAccounts = useMemo(() => accounts.filter(a => a.type === 'CREDIT_CARD' && a.isActive), [accounts]);
 
   // KPIs
-  const totalBalance = accounts
+  const computeRealBalance = (account: Account) => {
+    const confirmed = transactions.filter(
+      tx => tx.accountId === account.id &&
+            (tx.status.trim() === "CONFIRMED" || tx.status.trim() === "RECONCILED")
+    );
+    const income  = confirmed.filter(tx => tx.type.trim() === "INCOME").reduce((s, tx) => s + Number(tx.amount), 0);
+    const expense = confirmed.filter(tx => tx.type.trim() === "EXPENSE").reduce((s, tx) => s + Number(tx.amount), 0);
+    return Number(account.initialBalance || 0) + income - expense;
+  };
+
+  const computeSimulatedBalance = (account: Account) => {
+    const acctTxs = transactions.filter(tx => tx.accountId === account.id);
+    const income  = acctTxs.filter(tx => tx.type.trim() === "INCOME").reduce((s, tx) => s + Number(tx.amount), 0);
+    const expense = acctTxs.filter(tx => tx.type.trim() === "EXPENSE").reduce((s, tx) => s + Number(tx.amount), 0);
+    return Number(account.initialBalance || 0) + income - expense;
+  };
+
+  const totalRealBalance = accounts
     .filter(a => a.isActive && a.type !== 'CREDIT_CARD')
-    .reduce((sum, a) => sum + Number(a.currentBalance), 0);
+    .reduce((sum, a) => sum + computeRealBalance(a), 0);
+
+  const totalSimulatedBalance = accounts
+    .filter(a => a.isActive && a.type !== 'CREDIT_CARD')
+    .reduce((sum, a) => sum + computeSimulatedBalance(a), 0);
 
   const ccUsed = accounts
     .filter(a => a.isActive && a.type === 'CREDIT_CARD')
-    .reduce((sum, a) => sum + Math.abs(Number(a.currentBalance)), 0);
-
-  const livre = totalBalance - ccUsed;
+    .reduce((sum, a) => sum + Math.abs(Number(a.currentBalance || 0)), 0);
 
   const currentMonth = new Date().getMonth();
   const currentYear = new Date().getFullYear();
@@ -106,17 +125,23 @@ export default function DashboardHomeScreen() {
     return d.getMonth() === prevMonth && d.getFullYear() === prevYear;
   };
 
-  const currentTxs = transactions.filter(t => t.status !== 'PENDING' && isCurrentMonth(t.date));
-  const prevTxs = transactions.filter(t => t.status !== 'PENDING' && isPrevMonth(t.date));
+  const currentTxs = transactions.filter(t => isCurrentMonth(t.date));
+  const prevTxs = transactions.filter(t => isPrevMonth(t.date));
 
-  const monthIncome = currentTxs.filter(t => t.type === 'INCOME').reduce((sum, t) => sum + Number(t.amount), 0);
-  const monthExpense = currentTxs.filter(t => t.type === 'EXPENSE').reduce((sum, t) => sum + Number(t.amount), 0);
+  const realCurrentTxs = currentTxs.filter(t => t.status === "CONFIRMED" || t.status === "RECONCILED");
+  const realPrevTxs = prevTxs.filter(t => t.status === "CONFIRMED" || t.status === "RECONCILED");
+
+  const monthRealIncome = realCurrentTxs.filter(t => t.type === 'INCOME').reduce((sum, t) => sum + Number(t.amount), 0);
+  const monthRealExpense = realCurrentTxs.filter(t => t.type === 'EXPENSE').reduce((sum, t) => sum + Number(t.amount), 0);
+
+  const monthSimulatedIncome = currentTxs.filter(t => t.type === 'INCOME').reduce((sum, t) => sum + Number(t.amount), 0);
+  const monthSimulatedExpense = currentTxs.filter(t => t.type === 'EXPENSE').reduce((sum, t) => sum + Number(t.amount), 0);
   
-  const prevIncome = prevTxs.filter(t => t.type === 'INCOME').reduce((sum, t) => sum + Number(t.amount), 0);
-  const prevExpense = prevTxs.filter(t => t.type === 'EXPENSE').reduce((sum, t) => sum + Number(t.amount), 0);
+  const prevRealIncome = realPrevTxs.filter(t => t.type === 'INCOME').reduce((sum, t) => sum + Number(t.amount), 0);
+  const prevRealExpense = realPrevTxs.filter(t => t.type === 'EXPENSE').reduce((sum, t) => sum + Number(t.amount), 0);
 
-  const incomeTrend = prevIncome > 0 ? ((monthIncome - prevIncome) / prevIncome) * 100 : 0;
-  const expenseTrend = prevExpense > 0 ? ((monthExpense - prevExpense) / prevExpense) * 100 : 0;
+  const incomeTrend = prevRealIncome > 0 ? ((monthRealIncome - prevRealIncome) / prevRealIncome) * 100 : 0;
+  const expenseTrend = prevRealExpense > 0 ? ((monthRealExpense - prevRealExpense) / prevRealExpense) * 100 : 0;
 
   const recentTxs = [...transactions]
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
@@ -153,8 +178,16 @@ export default function DashboardHomeScreen() {
     >
       <View style={styles.kpiStack}>
         <View style={styles.balanceCard}>
-          <Text style={styles.balanceLabel}>Saldo Geral</Text>
-          <Text style={styles.balanceValue}>{formatCurrency(totalBalance)}</Text>
+          <Text style={styles.balanceLabel}>Saldo Real</Text>
+          <Text style={styles.balanceValue}>{formatCurrency(totalRealBalance)}</Text>
+
+          <View style={{ marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderColor: 'rgba(255,255,255,0.1)', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Feather name="eye" size={14} color="#a1a1aa" />
+              <Text style={{ color: '#a1a1aa', fontSize: 12, fontWeight: '600' }}>Saldo Previsto</Text>
+            </View>
+            <Text style={{ color: '#a1a1aa', fontSize: 13, fontWeight: 'bold' }}>{formatCurrency(totalSimulatedBalance)}</Text>
+          </View>
         </View>
 
         <View style={styles.rowKpi}>
@@ -163,7 +196,7 @@ export default function DashboardHomeScreen() {
               <Text style={styles.kpiLabel}>Receitas</Text>
               <Feather name="arrow-up-circle" size={16} color="#10b981" />
             </View>
-            <Text style={styles.kpiValue} numberOfLines={1} adjustsFontSizeToFit>{formatCurrency(monthIncome)}</Text>
+            <Text style={styles.kpiValue} numberOfLines={1} adjustsFontSizeToFit>{formatCurrency(monthRealIncome)}</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
               {incomeTrend !== 0 && (
                 <Feather name={incomeTrend > 0 ? 'arrow-up-right' : 'arrow-down-right'} size={12} color={incomeTrend >= 0 ? '#10b981' : '#f43f5e'} />
@@ -172,6 +205,10 @@ export default function DashboardHomeScreen() {
                 {incomeTrend === 0 ? 'Mensal' : `${Math.abs(incomeTrend).toFixed(1)}%`}
               </Text>
             </View>
+            <View style={styles.kpiSimulatedRow}>
+              <Text style={styles.kpiSimulatedLabel}>Previsto:</Text>
+              <Text style={styles.kpiSimulatedValue}>{formatCurrency(monthSimulatedIncome)}</Text>
+            </View>
           </View>
 
           <View style={[styles.baseCard, styles.kpiHalfCard]}>
@@ -179,7 +216,7 @@ export default function DashboardHomeScreen() {
               <Text style={styles.kpiLabel}>Despesas</Text>
               <Feather name="arrow-down-circle" size={16} color="#f43f5e" />
             </View>
-            <Text style={styles.kpiValue} numberOfLines={1} adjustsFontSizeToFit>{formatCurrency(monthExpense)}</Text>
+            <Text style={styles.kpiValue} numberOfLines={1} adjustsFontSizeToFit>{formatCurrency(monthRealExpense)}</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
               {expenseTrend !== 0 && (
                 <Feather name={expenseTrend > 0 ? 'arrow-up-right' : 'arrow-down-right'} size={12} color={expenseTrend >= 0 ? '#f43f5e' : '#10b981'} />
@@ -187,6 +224,10 @@ export default function DashboardHomeScreen() {
               <Text style={[styles.kpiTrend, { color: expenseTrend > 0 ? '#f43f5e' : '#10b981' }]}>
                 {expenseTrend === 0 ? 'Mensal' : `${Math.abs(expenseTrend).toFixed(1)}%`}
               </Text>
+            </View>
+            <View style={styles.kpiSimulatedRow}>
+              <Text style={styles.kpiSimulatedLabel}>Previsto:</Text>
+              <Text style={styles.kpiSimulatedValue}>{formatCurrency(monthSimulatedExpense)}</Text>
             </View>
           </View>
         </View>
@@ -232,8 +273,8 @@ export default function DashboardHomeScreen() {
                   <View key={acc.id} style={[styles.accountCard, { backgroundColor: ACCOUNT_COLORS[acc.type] || '#18181b' }]}>
                     <Text style={styles.accountType}>{ACCOUNT_LABELS[acc.type] || 'Outros'}</Text>
                     <Text style={styles.accountName} numberOfLines={1}>{acc.name}</Text>
-                    <Text style={styles.accountLabelSmall}>Saldo disponível</Text>
-                    <Text style={styles.accountBalance} numberOfLines={1}>{formatCurrency(Number(acc.currentBalance))}</Text>
+                    <Text style={styles.accountLabelSmall}>Saldo real</Text>
+                    <Text style={styles.accountBalance} numberOfLines={1}>{formatCurrency(computeRealBalance(acc))}</Text>
                   </View>
                 ))}
               </ScrollView>
@@ -593,5 +634,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '900',
     color: '#18181b',
+  },
+  kpiSimulatedRow: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f4f4f5',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  kpiSimulatedLabel: {
+    fontSize: 10,
+    color: '#a1a1aa',
+    fontWeight: '600',
+  },
+  kpiSimulatedValue: {
+    fontSize: 11,
+    color: '#a1a1aa',
+    fontWeight: 'bold',
   },
 });

@@ -1,6 +1,6 @@
 import { Feather } from '@expo/vector-icons';
-import { Stack, useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
+import React, { useState, useEffect } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import {
     ActivityIndicator,
@@ -17,7 +17,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/features/auth/store/AuthContext';
-import { CreateCategoryDTO, createCategory } from '@/features/dashboard/services/category.service';
+import { CreateCategoryDTO, UpdateCategoryDTO, createCategory, updateCategory } from '@/features/dashboard/services/category.service';
 
 
 
@@ -50,7 +50,11 @@ export default function NewCategoryScreen() {
   const { user } = useAuth();
   const [saving, setSaving] = useState(false);
 
-  const { control, handleSubmit, formState: { errors }, watch, setValue } = useForm<FormValues>({
+  // Params para edição
+  const params = useLocalSearchParams<{ id?: string; name?: string; color?: string; icon?: string; type?: string }>();
+  const isEditing = !!params.id;
+
+  const { control, handleSubmit, formState: { errors }, watch, reset } = useForm<FormValues>({
     defaultValues: {
       name: '',
       color: CATEGORY_COLORS[0],
@@ -59,36 +63,49 @@ export default function NewCategoryScreen() {
     },
   });
 
+  useEffect(() => {
+    if (isEditing) {
+      reset({
+        name: params.name ?? '',
+        color: params.color ?? CATEGORY_COLORS[0],
+        icon: params.icon ?? CATEGORY_ICONS[0],
+        type: (params.type as 'INCOME' | 'EXPENSE') ?? 'EXPENSE',
+      });
+    }
+  }, [isEditing]);
+
   const selectedColor = watch('color');
   const selectedIcon = watch('icon');
   const selectedType = watch('type');
 
   const onSubmit = async (data: FormValues) => {
-    console.log('[DEBUG new-category] user:', user);
-    console.log('[DEBUG new-category] userId:', user?.id);
-    
     if (!user) {
       Alert.alert('Erro', 'Usuário não autenticado. Faça login novamente.');
       return;
     }
-
     try {
       setSaving(true);
-
-      const dto: CreateCategoryDTO = {
-        userId: user.id,
-        name: data.name.trim(),
-        color: data.color,
-        icon: data.icon,
-        type: data.type,
-      };
-
-      console.log('[DEBUG new-category] Enviando DTO:', JSON.stringify(dto));
-      const result = await createCategory(dto);
-      console.log('[DEBUG new-category] Resposta da API:', JSON.stringify(result));
+      if (isEditing) {
+        const dto: UpdateCategoryDTO = {
+          name: data.name.trim(),
+          color: data.color,
+          icon: data.icon,
+          type: data.type,
+        };
+        await updateCategory(Number(params.id), dto);
+      } else {
+        const dto: CreateCategoryDTO = {
+          userId: user.id,
+          name: data.name.trim(),
+          color: data.color,
+          icon: data.icon,
+          type: data.type,
+        };
+        await createCategory(dto);
+      }
       router.back();
     } catch (err: any) {
-      console.error('[Category] Erro ao criar categoria:', err?.response?.data || err?.message);
+      console.error('[Category] Erro:', err?.response?.data || err?.message);
       Alert.alert('Erro', err?.response?.data?.message ?? 'Não foi possível salvar a categoria.');
     } finally {
       setSaving(false);
@@ -97,22 +114,22 @@ export default function NewCategoryScreen() {
 
   return (
     <>
-      <Stack.Screen
-        options={{
-          title: 'Nova Categoria',
-          headerShown: true,
-          headerLeft: () => (
-            <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Feather name="x" size={22} color="#18181b" />
-            </TouchableOpacity>
-          ),
-        }}
-      />
+      <Stack.Screen options={{ headerShown: false }} />
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
+        {/* ── Header Escuro ── */}
+        <View style={[styles.darkHeader, { paddingTop: insets.top }]}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.darkHeaderBack}>
+            <Feather name="x" size={20} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.darkHeaderTitle}>
+            {isEditing ? 'Editar Categoria' : 'Nova Categoria'}
+          </Text>
+        </View>
+
         <ScrollView
           style={styles.root}
           contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}
@@ -246,7 +263,9 @@ export default function NewCategoryScreen() {
             {saving ? (
               <ActivityIndicator color="#ffffff" />
             ) : (
-              <Text style={styles.saveButtonText}>Salvar Categoria</Text>
+              <Text style={styles.saveButtonText}>
+                {isEditing ? 'Salvar alterações' : 'Salvar Categoria'}
+              </Text>
             )}
           </TouchableOpacity>
         </ScrollView>
@@ -260,6 +279,17 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#ffffff',
   },
+  // Dark header — igual ao de novo-responsável
+  darkHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    paddingHorizontal: 16, paddingBottom: 14, backgroundColor: '#18181b',
+  },
+  darkHeaderBack: {
+    width: 36, height: 36, borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  darkHeaderTitle: { fontSize: 16, fontWeight: '700', color: '#fff', flex: 1 },
   content: {
     padding: 20,
     gap: 4,

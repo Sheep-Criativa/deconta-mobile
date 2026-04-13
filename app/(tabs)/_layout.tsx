@@ -77,6 +77,7 @@ export default function TabLayout() {
           name="history"
           options={{
             title: 'Extrato',
+            headerShown: false,
             tabBarIcon: ({ color }) => <Ionicons size={22} name="wallet-outline" color={color} />,
           }}
         />
@@ -102,6 +103,7 @@ export default function TabLayout() {
           name="accounts"
           options={{
             title: 'Contas/Cartões',
+            headerShown: false,
             tabBarIcon: ({ color }) => <Ionicons size={22} name="card-outline" color={color} />,
           }}
         />
@@ -109,15 +111,16 @@ export default function TabLayout() {
           name="settings"
           options={{
             title: 'Perfil',
+            headerShown: false,
             tabBarIcon: ({ color }) => <Ionicons size={22} name="person-outline" color={color} />,
           }}
         />
-        <Tabs.Screen name="new-recipe" options={{ href: null }} />
-        <Tabs.Screen name="new-expense" options={{ href: null }} />
-        <Tabs.Screen name="new-category" options={{ href: null }} />
-        <Tabs.Screen name="new-responsible" options={{ href: null }} />
-        <Tabs.Screen name="categories" options={{ href: null }} />
-        <Tabs.Screen name="responsibles" options={{ href: null }} />
+        <Tabs.Screen name="new-recipe" options={{ href: null, headerShown: false }} />
+        <Tabs.Screen name="new-expense" options={{ href: null, headerShown: false }} />
+        <Tabs.Screen name="new-category" options={{ href: null, headerShown: false }} />
+        <Tabs.Screen name="new-responsible" options={{ href: null, headerShown: false }} />
+        <Tabs.Screen name="categories" options={{ href: null, headerShown: false }} />
+        <Tabs.Screen name="responsibles" options={{ href: null, headerShown: false }} />
       </Tabs>
 
       <QuickActionsMenu

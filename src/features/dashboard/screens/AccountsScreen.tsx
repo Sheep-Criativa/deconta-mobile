@@ -1,32 +1,35 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Modal,
-  TextInput,
-  Alert,
-  ActivityIndicator,
-  RefreshControl,
-  KeyboardAvoidingView,
-  Platform,
-} from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ScreenNavBar } from '@/components/ScreenNavBar';
+import { useAuth } from '@/features/auth/store/AuthContext';
 import {
   Account,
   AccountType,
-  CreateAccountDTO,
-  getAccounts,
   createAccount,
-  updateAccount,
+  CreateAccountDTO,
   deleteAccount,
+  getAccounts,
+  updateAccount,
 } from '@/features/dashboard/services/account.service';
-import { useAuth } from '@/features/auth/store/AuthContext';
+import { useRouter } from 'expo-router';
 import { CreditCardVisual } from '../components/CreditCardVisual';
+import { getStatements, type Statement } from '../services/credit-card.service';
 
 // ─── Constantes de Identidade Visual ─────────────────────────────────────────
 
@@ -159,7 +162,7 @@ function AccountFormModal({ visible, account, userId, activeTab, onClose, onSave
 
   const handleSave = async () => {
     if (!name.trim()) return Alert.alert('Campo obrigatório', 'Informe o nome da conta.');
-    
+
     const balanceStr = balance.trim() === '' ? '0' : balance;
     const balanceNum = parseFloat(balanceStr.replace(',', '.'));
     if (isNaN(balanceNum)) return Alert.alert('Valor inválido', 'Informe o saldo inicial corretamente.');
@@ -364,6 +367,8 @@ export default function AccountsScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const [activeTab, setActiveTab] = useState<'CONTAS' | 'CARTOES'>('CONTAS');
+  const [allStmts, setAllStmts] = useState<Record<number, Statement[]>>({});
+  const router = useRouter();
 
   const fetchAccounts = useCallback(async (showRefresh = false) => {
     if (!user) return;
@@ -371,6 +376,15 @@ export default function AccountsScreen() {
       showRefresh ? setRefreshing(true) : setLoading(true);
       const data = await getAccounts(user.id);
       setAccounts(data);
+
+      const active = data.filter(a => a.isActive);
+      const cc = active.filter(a => a.type === 'CREDIT_CARD');
+      if (cc.length > 0) {
+        const stmtResults = await Promise.all(cc.map(c => getStatements(c.id).catch(() => [] as Statement[])));
+        const map: Record<number, Statement[]> = {};
+        cc.forEach((c, i) => { map[c.id] = stmtResults[i]; });
+        setAllStmts(map);
+      }
     } catch {
       Alert.alert('Erro', 'Não foi possível carregar suas contas.');
     } finally {
@@ -409,34 +423,35 @@ export default function AccountsScreen() {
   };
 
   const activeAccounts = accounts.filter((a) => a.isActive);
-  const currentItems = activeTab === 'CONTAS' 
+  const currentItems = activeTab === 'CONTAS'
     ? activeAccounts.filter((a) => a.type !== 'CREDIT_CARD')
     : activeAccounts.filter((a) => a.type === 'CREDIT_CARD');
 
   const totalBalance = activeAccounts
     .filter((a) => a.type !== 'CREDIT_CARD')
-    .reduce((sum, a) => sum + a.currentBalance, 0);
+    .reduce((sum, a) => sum + Number(a.currentBalance), 0);
 
-  const totalCreditUsed = activeAccounts
-    .filter((a) => a.type === 'CREDIT_CARD')
-    .reduce((sum, a) => sum + Math.abs(a.currentBalance), 0);
+  const cardAccounts = activeAccounts.filter((a) => a.type === 'CREDIT_CARD');
+
+  const totalLimit = cardAccounts.reduce((sum, c) => sum + Number(c.limitAmount ?? 0), 0);
+
+  const totalCreditUsed = cardAccounts.reduce((sum, c) => {
+    const stmts = allStmts[c.id] ?? [];
+    const unpaid = stmts.filter(st => st.status !== "PAID").reduce((s, st) => s + Number(st.totalAmount ?? 0), 0);
+    return sum + unpaid;
+  }, 0);
+
+  const totalCreditAvailable = Math.max(totalLimit - totalCreditUsed, 0);
 
   return (
     <View style={styles.root}>
-      {/* ── Header da tela ── */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerLabel}>FINANÇAS</Text>
-          <Text style={styles.headerTitle}>Contas & Cartões</Text>
-        </View>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => { setEditingAccount(null); setModalVisible(true); }}
-          activeOpacity={0.85}
-        >
-          <Feather name="plus" size={20} color="#fff" />
-        </TouchableOpacity>
-      </View>
+      {/* ── Navbar ── */}
+      <ScreenNavBar
+        title="Contas & Cartões"
+        actionIcon="plus"
+        onAction={() => { setEditingAccount(null); setModalVisible(true); }}
+        actionColor="#10b981"
+      />
 
       <ScrollView
         style={styles.scroll}
@@ -475,18 +490,30 @@ export default function AccountsScreen() {
 
         {/* ── Cards de KPI ── */}
         {activeTab === 'CONTAS' ? (
-          <View style={[styles.kpiCard, { backgroundColor: '#10b981', marginBottom: 16 }]}>
+          <View style={[styles.kpiCard, { backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#f4f4f5', marginBottom: 16 }]}>
             <View style={styles.kpiCircle} />
-            <Feather name="trending-up" size={17} color="rgba(255,255,255,0.7)" />
-            <Text style={styles.kpiLabel}>SALDO TOTAL (CONTAS)</Text>
-            <Text style={styles.kpiValue}>{formatCurrency(totalBalance)}</Text>
+            <Feather name="trending-up" size={17} color="#10b981" />
+            <Text style={[styles.kpiLabel, { color: '#a1a1aa' }]}>SALDO TOTAL (CONTAS)</Text>
+            <Text style={[styles.kpiValue, { color: '#18181b', fontSize: 22, letterSpacing: -0.5 }]}>{formatCurrency(totalBalance)}</Text>
           </View>
         ) : (
-          <View style={[styles.kpiCard, { backgroundColor: '#f59e0b', marginBottom: 16 }]}>
-            <View style={styles.kpiCircle} />
-            <Feather name="credit-card" size={17} color="rgba(255,255,255,0.7)" />
-            <Text style={styles.kpiLabel}>CRÉDITO USADO</Text>
-            <Text style={styles.kpiValue}>{formatCurrency(totalCreditUsed)}</Text>
+          <View style={[styles.kpiCard, { backgroundColor: '#18181b', marginBottom: 16, padding: 24, borderRadius: 28, height: 'auto', flexDirection: 'column', alignItems: 'stretch' }]}>
+            <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 8 }}>Limite Total</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
+              <Text style={{ color: '#fff', fontSize: 32, fontWeight: '900', letterSpacing: -1 }}>R$ {totalCreditAvailable.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</Text>
+            </View>
+            <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: '500', marginTop: 4 }}>disponível de R$ {totalLimit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</Text>
+
+            <View style={{ marginTop: 20, flexDirection: 'row', justifyContent: 'space-between', paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)' }}>
+              <View>
+                <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Usado</Text>
+                <Text style={{ color: '#f43f5e', fontSize: 16, fontWeight: '900' }}>R$ {totalCreditUsed.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Livre</Text>
+                <Text style={{ color: '#10b981', fontSize: 16, fontWeight: '900' }}>R$ {totalCreditAvailable.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</Text>
+              </View>
+            </View>
           </View>
         )}
 
@@ -517,14 +544,20 @@ export default function AccountsScreen() {
               {currentItems.length} {currentItems.length === 1 ? (activeTab === 'CONTAS' ? 'conta cadastrada' : 'cartão cadastrado') : (activeTab === 'CONTAS' ? 'contas cadastradas' : 'cartões cadastrados')}
             </Text>
             <View style={styles.accountList}>
-              {currentItems.map((account) => 
+              {currentItems.map((account) =>
                 activeTab === 'CARTOES' ? (
-                  <CreditCardVisual
+                  <TouchableOpacity
                     key={account.id}
-                    account={account}
-                    onEdit={handleEdit}
-                    onDelete={handleDelete}
-                  />
+                    activeOpacity={0.9}
+                    onPress={() => router.push({ pathname: '/cards/[id]', params: { id: account.id } })}
+                  >
+                    <CreditCardVisual
+                      account={account}
+                      usedAmount={(allStmts[account.id] ?? []).filter(st => st.status !== "PAID").reduce((s, st) => s + Number(st.totalAmount ?? 0), 0)}
+                      onEdit={handleEdit}
+                      onDelete={handleDelete}
+                    />
+                  </TouchableOpacity>
                 ) : (
                   <AccountCard
                     key={account.id}
@@ -587,15 +620,15 @@ const styles = StyleSheet.create({
   addButton: {
     width: 44,
     height: 44,
-    borderRadius: 12,
+    borderRadius: 8,
     backgroundColor: '#10b981',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#10b981',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowRadius: 12,
+    elevation: 8,
   },
 
   /* Scroll */
@@ -803,10 +836,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#10b981',
     borderRadius: 8,
     shadowColor: '#10b981',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowRadius: 12,
+    elevation: 8,
   },
   emptyButtonText: {
     color: '#fff',

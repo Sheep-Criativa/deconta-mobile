@@ -294,24 +294,20 @@ export default function NewRecipeScreen() {
 
   return (
     <>
-      <Stack.Screen
-        options={{
-          title: 'Nova Receita',
-          headerShown: true,
-          headerLeft: () => (
-            <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Feather name="x" size={22} color="#18181b" />
-            </TouchableOpacity>
-          ),
-          headerStyle: { backgroundColor: '#ffffff' },
-          headerShadowVisible: false,
-        }}
-      />
+      <Stack.Screen options={{ headerShown: false }} />
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
+        {/* ── Header Escuro ── */}
+        <View style={[styles.darkHeader, { paddingTop: insets.top }]}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.darkHeaderBack}>
+            <Feather name="x" size={20} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.darkHeaderTitle}>Nova Receita</Text>
+        </View>
+
         <ScrollView
           style={styles.root}
           contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}
@@ -549,6 +545,19 @@ const styles = StyleSheet.create({
   center: { justifyContent: 'center', alignItems: 'center' },
   row: { flexDirection: 'row', gap: 12 },
   flex1: { flex: 1 },
+  // Dark header
+  darkHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    paddingHorizontal: 16, paddingBottom: 14, backgroundColor: '#18181b',
+  },
+  darkHeaderBack: {
+    width: 36, height: 36, borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  darkHeaderTitle: {
+    fontSize: 16, fontFamily: 'Poppins_600SemiBold', color: '#fff', flex: 1,
+  },
   sectionTitle: {
     fontSize: 11,
     fontFamily: 'Poppins_600SemiBold',

@@ -13,8 +13,10 @@ import {
   Pressable,
 } from 'react-native';
 import { Feather, Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, Stack } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/features/auth/store/AuthContext';
+import { ScreenNavBar } from '@/components/ScreenNavBar';
 import { getTransactions, deleteTransaction, Transaction } from '@/features/dashboard/services/transaction.service';
 import { getAccounts, Account } from '@/features/dashboard/services/account.service';
 import { getCategories, Category } from '@/features/dashboard/services/category.service';
@@ -206,6 +208,7 @@ type TypeFilter = '' | 'INCOME' | 'EXPENSE';
 export default function HistoryScreen() {
   const { user } = useAuth();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -319,6 +322,11 @@ export default function HistoryScreen() {
 
   return (
     <View style={styles.container}>
+      <Stack.Screen options={{ headerShown: false }} />
+
+      {/* ── Navbar ── */}
+      <ScreenNavBar title="Extrato" />
+
       {/* ── Navegação de mês ── */}
       <View style={styles.monthNav}>
         <TouchableOpacity onPress={prevMonth} style={styles.monthBtn}>
@@ -442,6 +450,21 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F5F6F8',
+  },
+
+  // Dark header
+  darkHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    backgroundColor: '#18181b',
+  },
+  darkHeaderTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#fff',
+    letterSpacing: -0.3,
   },
 
   // Month Nav

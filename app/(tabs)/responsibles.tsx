@@ -13,7 +13,11 @@ import { useRouter, Stack, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Responsible, getResponsibles, deleteResponsible } from '@/features/dashboard/services/responsible.service';
+import {
+  Responsible,
+  getResponsibles,
+  deleteResponsible,
+} from '@/features/dashboard/services/responsible.service';
 import { useAuth } from '@/features/auth/store/AuthContext';
 
 function getInitial(name: string) {
@@ -41,11 +45,7 @@ export default function ResponsiblesScreen() {
     }
   }, [user]);
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchResponsibles();
-    }, [fetchResponsibles])
-  );
+  useFocusEffect(useCallback(() => { fetchResponsibles(); }, [fetchResponsibles]));
 
   const filtered = responsibles.filter((r) =>
     r.name.toLowerCase().includes(search.toLowerCase())
@@ -73,28 +73,35 @@ export default function ResponsiblesScreen() {
     );
   };
 
+  const goToNew = () => router.push('/(tabs)/new-responsible' as any);
+  const goToEdit = (r: Responsible) =>
+    router.push({
+      pathname: '/(tabs)/new-responsible' as any,
+      params: { id: String(r.id), name: r.name, color: r.color ?? '#10b981' },
+    });
+
   return (
     <>
-      <Stack.Screen
-        options={{
-          title: 'Responsáveis',
-          headerShown: true,
-          headerLeft: () => (
-            <TouchableOpacity
-              onPress={() => router.back()}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Feather name="arrow-left" size={22} color="#18181b" />
-            </TouchableOpacity>
-          ),
-        }}
-      />
-
+      <Stack.Screen options={{ headerShown: false }} />
       <View style={[styles.root, { paddingBottom: insets.bottom }]}>
-        {/* Search + Add row */}
+
+        {/* ── Header ── */}
+        <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
+          <View>
+            <Text style={styles.headerTitle}>Responsáveis</Text>
+            <Text style={styles.headerSub}>
+              {responsibles.length} responsáve{responsibles.length !== 1 ? 'is' : 'l'} cadastrado{responsibles.length !== 1 ? 's' : ''}
+            </Text>
+          </View>
+          <TouchableOpacity style={styles.addBtn} onPress={goToNew} activeOpacity={0.85}>
+            <Feather name="plus" size={20} color="#fff" />
+          </TouchableOpacity>
+        </View>
+
+        {/* ── Busca ── */}
         <View style={styles.searchRow}>
-          <View style={styles.searchContainer}>
-            <Feather name="search" size={18} color="#a1a1aa" style={styles.searchIcon} />
+          <View style={styles.searchBox}>
+            <Feather name="search" size={16} color="#a1a1aa" />
             <TextInput
               style={styles.searchInput}
               placeholder="Buscar responsável..."
@@ -105,36 +112,28 @@ export default function ResponsiblesScreen() {
             />
             {search.length > 0 && (
               <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Feather name="x" size={16} color="#a1a1aa" />
+                <Feather name="x" size={14} color="#a1a1aa" />
               </TouchableOpacity>
             )}
           </View>
-
-          <TouchableOpacity
-            style={styles.addButton}
-            onPress={() => router.push('/(tabs)/new-responsible' as any)}
-            activeOpacity={0.85}
-          >
-            <Feather name="plus" size={20} color="#ffffff" />
-          </TouchableOpacity>
         </View>
 
-        {/* List */}
+        {/* ── Lista ── */}
         {loading ? (
           <View style={styles.center}>
             <ActivityIndicator color="#10b981" size="large" />
           </View>
         ) : filtered.length === 0 ? (
           <View style={styles.center}>
-            <View style={styles.emptyIcon}>
-              <Feather name="users" size={32} color="#a1a1aa" />
+            <View style={styles.emptyIconBox}>
+              <Feather name="users" size={32} color="#d4d4d8" />
             </View>
             <Text style={styles.emptyTitle}>
               {search.length > 0 ? 'Nenhum resultado' : 'Nenhum responsável'}
             </Text>
-            <Text style={styles.emptySubtitle}>
+            <Text style={styles.emptySub}>
               {search.length > 0
-                ? 'Tente outro termo de busca'
+                ? 'Tente ajustar o termo de busca'
                 : 'Toque no "+" para adicionar o primeiro responsável'}
             </Text>
           </View>
@@ -144,9 +143,13 @@ export default function ResponsiblesScreen() {
             keyExtractor={(item) => String(item.id)}
             contentContainerStyle={styles.list}
             showsVerticalScrollIndicator={false}
-            ItemSeparatorComponent={() => <View style={styles.separator} />}
+            ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
             renderItem={({ item }) => (
-              <View style={styles.card}>
+              <TouchableOpacity
+                style={styles.card}
+                onPress={() => goToEdit(item)}
+                activeOpacity={0.75}
+              >
                 {/* Avatar */}
                 <View style={[styles.avatar, { backgroundColor: item.color ?? '#10b981' }]}>
                   <Text style={styles.avatarText}>{getInitial(item.name)}</Text>
@@ -164,14 +167,23 @@ export default function ResponsiblesScreen() {
                 </View>
 
                 {/* Actions */}
-                <TouchableOpacity
-                  style={styles.actionBtn}
-                  onPress={() => handleDelete(item)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Feather name="trash-2" size={16} color="#ef4444" />
-                </TouchableOpacity>
-              </View>
+                <View style={styles.cardActions}>
+                  <TouchableOpacity
+                    style={styles.editBtn}
+                    onPress={() => goToEdit(item)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Feather name="edit-2" size={14} color="#6366f1" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.deleteBtn}
+                    onPress={() => handleDelete(item)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Feather name="trash-2" size={14} color="#ef4444" />
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
             )}
           />
         )}
@@ -181,145 +193,52 @@ export default function ResponsiblesScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: '#fafafa',
+  root: { flex: 1, backgroundColor: '#F5F6F8' },
+
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingBottom: 12, marginBottom: 8,
+    backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f4f4f5',
   },
-  searchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f4f4f5',
+  headerTitle: { fontSize: 24, fontWeight: '900', color: '#18181b' },
+  headerSub: { fontSize: 12, color: '#a1a1aa', fontWeight: '500', marginTop: 2 },
+  addBtn: {
+    width: 44, height: 44, borderRadius: 14, backgroundColor: '#10b981',
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#10b981', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 6,
   },
-  searchContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f4f4f5',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    height: 44,
-    gap: 8,
+
+  searchRow: { paddingHorizontal: 16, marginBottom: 8 },
+  searchBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#fff', borderRadius: 14, paddingHorizontal: 14, height: 44,
+    borderWidth: 1, borderColor: '#f4f4f5',
   },
-  searchIcon: {
-    marginRight: 2,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    fontFamily: 'Poppins_400Regular',
-    color: '#18181b',
-    paddingVertical: 0,
-  },
-  addButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: '#10b981',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#10b981',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  list: {
-    padding: 16,
-  },
-  separator: {
-    height: 10,
-  },
+  searchInput: { flex: 1, fontSize: 13, color: '#18181b', fontWeight: '600' },
+
+  list: { paddingHorizontal: 16, paddingBottom: 40 },
+
   card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 14,
-    gap: 12,
-    borderWidth: 1,
-    borderColor: '#f4f4f5',
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
+    borderRadius: 18, padding: 14, gap: 12,
+    borderWidth: 1, borderColor: '#f4f4f5',
   },
-  avatar: {
-    width: 46,
-    height: 46,
-    borderRadius: 9999,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    fontSize: 18,
-    fontFamily: 'Poppins_700Bold',
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  cardInfo: {
-    flex: 1,
-    gap: 5,
-  },
-  cardName: {
-    fontSize: 15,
-    fontFamily: 'Poppins_600SemiBold',
-    color: '#18181b',
-  },
+  avatar: { width: 46, height: 46, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { fontSize: 18, fontFamily: 'Poppins_700Bold', fontWeight: '700', color: '#ffffff' },
+  cardInfo: { flex: 1, gap: 5 },
+  cardName: { fontSize: 15, fontWeight: '700', color: '#18181b' },
   statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 9999,
-    gap: 5,
+    flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start',
+    paddingHorizontal: 8, paddingVertical: 2, borderRadius: 9999, gap: 5,
   },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 9999,
-  },
-  statusText: {
-    fontSize: 11,
-    fontFamily: 'Poppins_500Medium',
-    fontWeight: '600',
-  },
-  actionBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: '#fff1f2',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  center: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    padding: 32,
-  },
-  emptyIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 24,
-    backgroundColor: '#f4f4f5',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
-  },
-  emptyTitle: {
-    fontSize: 16,
-    fontFamily: 'Poppins_600SemiBold',
-    color: '#18181b',
-    textAlign: 'center',
-  },
-  emptySubtitle: {
-    fontSize: 13,
-    fontFamily: 'Poppins_400Regular',
-    color: '#a1a1aa',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
+  statusDot: { width: 6, height: 6, borderRadius: 9999 },
+  statusText: { fontSize: 11, fontFamily: 'Poppins_500Medium', fontWeight: '600' },
+  cardActions: { flexDirection: 'row', gap: 8 },
+  editBtn: { width: 34, height: 34, borderRadius: 10, backgroundColor: '#eef2ff', alignItems: 'center', justifyContent: 'center' },
+  deleteBtn: { width: 34, height: 34, borderRadius: 10, backgroundColor: '#fff1f2', alignItems: 'center', justifyContent: 'center' },
+
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 32 },
+  emptyIconBox: { width: 80, height: 80, borderRadius: 24, backgroundColor: '#f4f4f5', alignItems: 'center', justifyContent: 'center' },
+  emptyTitle: { fontSize: 17, fontWeight: '800', color: '#18181b', textAlign: 'center' },
+  emptySub: { fontSize: 13, color: '#a1a1aa', textAlign: 'center', lineHeight: 20 },
 });

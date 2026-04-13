@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,12 +11,17 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { useRouter, Stack } from 'expo-router';
+import { useRouter, Stack, useLocalSearchParams } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { CreateResponsibleDTO, createResponsible } from '@/features/dashboard/services/responsible.service';
+import {
+  CreateResponsibleDTO,
+  UpdateResponsibleDTO,
+  createResponsible,
+  updateResponsible,
+} from '@/features/dashboard/services/responsible.service';
 import { useAuth } from '@/features/auth/store/AuthContext';
 
 const RESPONSIBLE_COLORS = [
@@ -35,32 +40,54 @@ export default function NewResponsibleScreen() {
   const { user } = useAuth();
   const [saving, setSaving] = useState(false);
 
-  const { control, handleSubmit, formState: { errors }, watch, setValue } = useForm<FormValues>({
+  // Params para modo edição
+  const params = useLocalSearchParams<{ id?: string; name?: string; color?: string }>();
+  const isEditing = !!params.id;
+
+  const { control, handleSubmit, formState: { errors }, watch, reset } = useForm<FormValues>({
     defaultValues: {
       name: '',
       color: RESPONSIBLE_COLORS[0],
     },
   });
 
+  // Preenche o form ao editar
+  useEffect(() => {
+    if (isEditing) {
+      reset({
+        name: params.name ?? '',
+        color: params.color ?? RESPONSIBLE_COLORS[0],
+      });
+    }
+  }, [isEditing]);
+
   const selectedColor = watch('color');
+
+  const getInitial = (name: string) => name.trim().charAt(0).toUpperCase() || '?';
 
   const onSubmit = async (data: FormValues) => {
     if (!user) {
       Alert.alert('Erro', 'Usuário não autenticado. Faça login novamente.');
       return;
     }
-
     try {
       setSaving(true);
-
-      const dto: CreateResponsibleDTO = {
-        userId: user?.id,
-        name: data.name.trim(),
-        color: data.color,
-        isActive: true,
-      };
-
-      await createResponsible(dto);
+      if (isEditing) {
+        const dto: UpdateResponsibleDTO = {
+          userId: user.id,
+          name: data.name.trim(),
+          color: data.color,
+        };
+        await updateResponsible(Number(params.id), dto);
+      } else {
+        const dto: CreateResponsibleDTO = {
+          userId: user.id,
+          name: data.name.trim(),
+          color: data.color,
+          isActive: true,
+        };
+        await createResponsible(dto);
+      }
       router.back();
     } catch (err: any) {
       Alert.alert('Erro', err?.response?.data?.message ?? 'Não foi possível salvar o responsável.');
@@ -69,34 +96,31 @@ export default function NewResponsibleScreen() {
     }
   };
 
-  const getInitial = (name: string) => {
-    return name.trim().charAt(0).toUpperCase() || '?';
-  };
-
   return (
     <>
-      <Stack.Screen
-        options={{
-          title: 'Novo Responsável',
-          headerShown: true,
-          headerLeft: () => (
-            <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Feather name="x" size={22} color="#18181b" />
-            </TouchableOpacity>
-          ),
-        }}
-      />
+      <Stack.Screen options={{ headerShown: false }} />
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
+        {/* ── Header Escuro ── */}
+        <View style={[styles.darkHeader, { paddingTop: insets.top }]}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.darkHeaderBack}>
+            <Feather name="x" size={20} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.darkHeaderTitle}>
+            {isEditing ? 'Editar Responsável' : 'Novo Responsável'}
+          </Text>
+        </View>
+
         <ScrollView
           style={styles.root}
           contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
+          {/* Preview */}
           <View style={styles.previewContainer}>
             <View style={[styles.previewAvatar, { backgroundColor: selectedColor }]}>
               <Text style={styles.previewInitial}>{getInitial(watch('name'))}</Text>
@@ -104,6 +128,7 @@ export default function NewResponsibleScreen() {
             <Text style={styles.previewLabel}>{watch('name') || 'Nome do responsável'}</Text>
           </View>
 
+          {/* Nome */}
           <Controller
             control={control}
             name="name"
@@ -129,6 +154,7 @@ export default function NewResponsibleScreen() {
             )}
           />
 
+          {/* Cor */}
           <Controller
             control={control}
             name="color"
@@ -164,7 +190,9 @@ export default function NewResponsibleScreen() {
             {saving ? (
               <ActivityIndicator color="#ffffff" />
             ) : (
-              <Text style={styles.saveButtonText}>Salvar Responsável</Text>
+              <Text style={styles.saveButtonText}>
+                {isEditing ? 'Salvar alterações' : 'Salvar Responsável'}
+              </Text>
             )}
           </TouchableOpacity>
         </ScrollView>
@@ -174,102 +202,43 @@ export default function NewResponsibleScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: '#ffffff',
+  root: { flex: 1, backgroundColor: '#ffffff' },
+  darkHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    paddingHorizontal: 16, paddingBottom: 14, backgroundColor: '#18181b',
   },
-  content: {
-    padding: 20,
-    gap: 4,
+  darkHeaderBack: {
+    width: 36, height: 36, borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center', justifyContent: 'center',
   },
-  previewContainer: {
-    alignItems: 'center',
-    paddingVertical: 24,
-    marginBottom: 8,
-  },
+  darkHeaderTitle: { fontSize: 16, fontWeight: '700', color: '#fff', flex: 1 },
+  content: { padding: 20, gap: 4 },
+  previewContainer: { alignItems: 'center', paddingVertical: 24, marginBottom: 8 },
   previewAvatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 12,
+    width: 80, height: 80, borderRadius: 40,
+    justifyContent: 'center', alignItems: 'center', marginBottom: 12,
   },
-  previewInitial: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  previewLabel: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#18181b',
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#27272a',
-    marginBottom: 8,
-    marginTop: 16,
-  },
+  previewInitial: { fontSize: 32, fontWeight: '700', color: '#ffffff' },
+  previewLabel: { fontSize: 18, fontWeight: '600', color: '#18181b' },
+  label: { fontSize: 14, fontWeight: '600', color: '#27272a', marginBottom: 8, marginTop: 16 },
   input: {
-    height: 48,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e4e4e7',
-    backgroundColor: '#fafafa',
-    paddingHorizontal: 14,
-    fontSize: 16,
-    color: '#18181b',
+    height: 48, borderRadius: 12, borderWidth: 1, borderColor: '#e4e4e7',
+    backgroundColor: '#fafafa', paddingHorizontal: 14, fontSize: 16, color: '#18181b',
   },
-  inputError: {
-    borderColor: '#ef4444',
-  },
-  colorsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  colorOption: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  inputError: { borderColor: '#ef4444' },
+  colorsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  colorOption: { width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   colorOptionSelected: {
-    borderWidth: 3,
-    borderColor: '#ffffff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
+    borderWidth: 3, borderColor: '#ffffff',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4, elevation: 4,
   },
   saveButton: {
-    height: 52,
-    backgroundColor: '#f59e0b',
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 32,
-    shadowColor: '#f59e0b',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
+    height: 52, backgroundColor: '#10b981', borderRadius: 14,
+    justifyContent: 'center', alignItems: 'center', marginTop: 32,
+    shadowColor: '#10b981', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 8,
   },
-  saveButtonDisabled: {
-    opacity: 0.7,
-  },
-  saveButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  error: {
-    fontSize: 12,
-    color: '#ef4444',
-    marginTop: 4,
-  },
+  saveButtonDisabled: { opacity: 0.7 },
+  saveButtonText: { fontSize: 16, fontWeight: '700', color: '#ffffff' },
+  error: { fontSize: 12, color: '#ef4444', marginTop: 4 },
 });

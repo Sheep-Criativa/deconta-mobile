@@ -10,6 +10,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { ScreenNavBar } from '@/components/ScreenNavBar';
 
 import { useAuth } from '@/features/auth/store/AuthContext';
 import { logoutUser } from '@/features/auth/services/auth.service';
@@ -52,11 +53,13 @@ export default function SettingsScreen() {
   };
 
   return (
-    <ScrollView
-      style={styles.root}
-      contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}
-      showsVerticalScrollIndicator={false}
-    >
+    <>
+      <ScreenNavBar title="Perfil" />
+      <ScrollView
+        style={styles.root}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}
+        showsVerticalScrollIndicator={false}
+      >
       {/* Avatar + Info */}
       <View style={styles.profileCard}>
         <View style={styles.avatar}>
@@ -117,6 +120,7 @@ export default function SettingsScreen() {
 
       <Text style={styles.version}>DeConta v1.0.0</Text>
     </ScrollView>
+    </>
   );
 }
 
